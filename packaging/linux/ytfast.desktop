@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=YTFast
+Comment=Audio-only YouTube player
+Exec=ytfast
+Icon=ytfast
+Categories=AudioVideo;Audio;Player;
+Terminal=false
+StartupWMClass=ytfast

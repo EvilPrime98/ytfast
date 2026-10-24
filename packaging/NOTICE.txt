@@ -1,0 +1,14 @@
+YTFast
+======
+
+YTFast plays the audio of YouTube videos. It does not include yt-dlp: install it
+separately (https://github.com/yt-dlp/yt-dlp) and make sure it is on PATH, or set
+its location in Settings. Use it in line with YouTube's terms of service and the
+copyright rules where you live.
+
+Third-party components
+----------------------
+- Geist and Geist Mono fonts, (c) Vercel, licensed under the SIL Open Font
+  License 1.1 (see assets/fonts/OFL.txt).
+- GPUI (gpui-ce), rodio, symphonia, reqwest, tokio and the other Rust crates
+  listed in Cargo.lock, under their respective open-source licenses.
