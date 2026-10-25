@@ -4,6 +4,8 @@ A desktop, audio-only YouTube player in the spirit of YouTube Music, built with 
 [GPUI](https://crates.io/crates/gpui-ce). Search for a song or paste a video / playlist link, and it plays
 in a small native window with a queue, a saved library and a player bar.
 
+<img width="1099" height="717" alt="image" src="https://github.com/user-attachments/assets/893d09d3-3a91-4f14-a347-4359fd4ccf03" />
+
 ## How it works
 
 - **yt-dlp** finds videos (`ytsearchN:`), resolves pasted links and downloads the best audio stream
