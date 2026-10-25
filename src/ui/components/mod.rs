@@ -5,3 +5,4 @@ pub mod checkbox;
 pub mod dropdown;
 pub mod text_input;
 pub mod track_row;
+pub mod video_card;

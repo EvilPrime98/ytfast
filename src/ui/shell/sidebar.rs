@@ -31,8 +31,9 @@ impl Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let saved = self.stores.library.read(cx).tracks.len();
-        let entries: [(Route, Icon, String); 5] = [
-            (Route::Home, Icon::Search, "Search".into()),
+        let entries: [(Route, Icon, String); 6] = [
+            (Route::Home, Icon::Music, "Home".into()),
+            (Route::Search, Icon::Search, "Search".into()),
             (Route::NowPlaying, Icon::Queue, "Now playing".into()),
             (
                 Route::Library,

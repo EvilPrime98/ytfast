@@ -80,7 +80,7 @@ impl Render for NowPlayingPage {
                     "np-find",
                     "Find music",
                     ButtonVariant::Classic,
-                    cx.listener(|_, _, _, cx| cx.emit(Navigate(Route::Home))),
+                    cx.listener(|_, _, _, cx| cx.emit(Navigate(Route::Search))),
                 ))
                 .into_any_element();
         }

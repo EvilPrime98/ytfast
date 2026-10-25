@@ -3,8 +3,10 @@
 /// App pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
-    /// Search + results.
+    /// The feed.
     Home,
+    /// Search + results.
+    Search,
     /// The queue and the current track, large.
     NowPlaying,
     /// Saved tracks.
@@ -21,7 +23,8 @@ impl Route {
     /// Page name for the window title (`"<page> · YTFast"`).
     pub fn title(&self) -> &'static str {
         match self {
-            Self::Home => "Search",
+            Self::Home => "Home",
+            Self::Search => "Search",
             Self::NowPlaying => "Now playing",
             Self::Library => "Library",
             Self::History => "History",

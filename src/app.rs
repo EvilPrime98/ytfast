@@ -17,6 +17,7 @@ use crate::ui::pages::history::HistoryPage;
 use crate::ui::pages::home::HomePage;
 use crate::ui::pages::library::LibraryPage;
 use crate::ui::pages::now_playing::NowPlayingPage;
+use crate::ui::pages::search::SearchPage;
 use crate::ui::pages::settings::SettingsPage;
 use crate::ui::shell::header::header;
 use crate::ui::shell::player_bar::PlayerBar;
@@ -55,6 +56,7 @@ pub fn bind_keys(cx: &mut App) {
 /// What the content area shows.
 enum Page {
     Home(Entity<HomePage>),
+    Search(Entity<SearchPage>),
     NowPlaying(Entity<NowPlayingPage>),
     Library(Entity<LibraryPage>),
     History(Entity<HistoryPage>),
@@ -100,6 +102,7 @@ impl AppRoot {
             cx.observe(&stores.prefs, |_, _, cx| cx.notify()),
         ];
 
+        let home = cx.new(|cx| HomePage::new(stores.clone(), cx));
         let mut this = Self {
             history: History::default(),
             stores: stores.clone(),
@@ -108,8 +111,12 @@ impl AppRoot {
             toasts,
             confirm,
             // The history starts at Home, so this is the page for the initial route.
-            page: Page::Home(cx.new(|cx| HomePage::new(stores.clone(), window, cx))),
-            _page_subs: Vec::new(),
+            page: Page::Home(home.clone()),
+            _page_subs: vec![cx.subscribe_in(
+                &home,
+                window,
+                |this, _, ev: &Navigate, window, cx| this.navigate(ev.0.clone(), window, cx),
+            )],
             _subs: subs,
             loading: true,
             pending_route: dev_route(),
@@ -179,7 +186,18 @@ impl AppRoot {
         });
         self._page_subs.clear();
         self.page = match route {
-            Route::Home => Page::Home(cx.new(|cx| HomePage::new(self.stores.clone(), window, cx))),
+            Route::Home => {
+                let page = cx.new(|cx| HomePage::new(self.stores.clone(), cx));
+                self._page_subs.push(cx.subscribe_in(
+                    &page,
+                    window,
+                    |this, _, ev: &Navigate, window, cx| this.navigate(ev.0.clone(), window, cx),
+                ));
+                Page::Home(page)
+            }
+            Route::Search => {
+                Page::Search(cx.new(|cx| SearchPage::new(self.stores.clone(), window, cx)))
+            }
             Route::NowPlaying => {
                 let page = cx.new(|cx| NowPlayingPage::new(self.stores.clone(), cx));
                 self._page_subs.push(cx.subscribe_in(
@@ -221,6 +239,7 @@ impl Render for AppRoot {
 
         let content = match &self.page {
             Page::Home(page) => AnyView::from(page.clone()),
+            Page::Search(page) => AnyView::from(page.clone()),
             Page::NowPlaying(page) => AnyView::from(page.clone()),
             Page::Library(page) => AnyView::from(page.clone()),
             Page::History(page) => AnyView::from(page.clone()),
@@ -279,7 +298,8 @@ impl Render for AppRoot {
 /// Dev aid: `YTFAST_OPEN=search|now-playing|library|settings` opens that page after startup.
 fn dev_route() -> Option<Route> {
     Some(match std::env::var("YTFAST_OPEN").ok()?.as_str() {
-        "search" => Route::Home,
+        "home" => Route::Home,
+        "search" => Route::Search,
         "now-playing" => Route::NowPlaying,
         "library" => Route::Library,
         "history" => Route::History,
