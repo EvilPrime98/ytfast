@@ -11,6 +11,7 @@ pub enum Icon {
     Gear,
     Heart,
     HeartOutline,
+    History,
     Music,
     Next,
     Pause,
@@ -28,13 +29,14 @@ pub enum Icon {
 
 impl Icon {
     #[cfg(test)]
-    pub const ALL: [Icon; 19] = [
+    pub const ALL: [Icon; 20] = [
         Self::Burger,
         Self::ChevronDown,
         Self::Close,
         Self::Gear,
         Self::Heart,
         Self::HeartOutline,
+        Self::History,
         Self::Music,
         Self::Next,
         Self::Pause,
@@ -58,6 +60,7 @@ impl Icon {
             Self::Gear => "icons/gear.svg",
             Self::Heart => "icons/heart.svg",
             Self::HeartOutline => "icons/heart-outline.svg",
+            Self::History => "icons/history.svg",
             Self::Music => "icons/music.svg",
             Self::Next => "icons/next.svg",
             Self::Pause => "icons/pause.svg",

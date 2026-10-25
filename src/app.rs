@@ -13,6 +13,7 @@ use crate::runtime;
 use crate::state::Stores;
 use crate::ui::app_loader::app_loader;
 use crate::ui::confirm::{self, ConfirmHost};
+use crate::ui::pages::history::HistoryPage;
 use crate::ui::pages::home::HomePage;
 use crate::ui::pages::library::LibraryPage;
 use crate::ui::pages::now_playing::NowPlayingPage;
@@ -56,6 +57,7 @@ enum Page {
     Home(Entity<HomePage>),
     NowPlaying(Entity<NowPlayingPage>),
     Library(Entity<LibraryPage>),
+    History(Entity<HistoryPage>),
     Settings(Entity<SettingsPage>),
 }
 
@@ -188,6 +190,7 @@ impl AppRoot {
                 Page::NowPlaying(page)
             }
             Route::Library => Page::Library(cx.new(|cx| LibraryPage::new(self.stores.clone(), cx))),
+            Route::History => Page::History(cx.new(|cx| HistoryPage::new(self.stores.clone(), cx))),
             Route::Settings => {
                 Page::Settings(cx.new(|cx| SettingsPage::new(self.stores.clone(), cx)))
             }
@@ -220,6 +223,7 @@ impl Render for AppRoot {
             Page::Home(page) => AnyView::from(page.clone()),
             Page::NowPlaying(page) => AnyView::from(page.clone()),
             Page::Library(page) => AnyView::from(page.clone()),
+            Page::History(page) => AnyView::from(page.clone()),
             Page::Settings(page) => AnyView::from(page.clone()),
         };
 
@@ -278,6 +282,7 @@ fn dev_route() -> Option<Route> {
         "search" => Route::Home,
         "now-playing" => Route::NowPlaying,
         "library" => Route::Library,
+        "history" => Route::History,
         "settings" => Route::Settings,
         _ => return None,
     })

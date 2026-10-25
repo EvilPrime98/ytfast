@@ -9,6 +9,7 @@ pub enum Route {
     NowPlaying,
     /// Saved tracks.
     Library,
+    History,
     Settings,
 }
 
@@ -23,6 +24,7 @@ impl Route {
             Self::Home => "Search",
             Self::NowPlaying => "Now playing",
             Self::Library => "Library",
+            Self::History => "History",
             Self::Settings => "Settings",
         }
     }
