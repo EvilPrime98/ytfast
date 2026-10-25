@@ -8,6 +8,7 @@ use crate::api::ytdlp;
 use crate::audio::Engine;
 use crate::model::Track;
 use crate::runtime;
+use crate::state::history::HistoryStore;
 use crate::state::prefs::PrefsStore;
 use crate::ui::toast;
 
@@ -35,13 +36,18 @@ pub struct PlayerStore {
     /// Bumped when the queue or the current track change, so views can memoize.
     pub revision: u64,
     prefs: Entity<PrefsStore>,
+    history: Entity<HistoryStore>,
     engine: Engine,
     /// Bumped per load so a slow download of a skipped track is dropped.
     load_generation: u64,
 }
 
 impl PlayerStore {
-    pub fn new(prefs: Entity<PrefsStore>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        prefs: Entity<PrefsStore>,
+        history: Entity<HistoryStore>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let volume = prefs.read(cx).prefs.volume;
         let store = Self {
             queue: Vec::new(),
@@ -52,6 +58,7 @@ impl PlayerStore {
             volume,
             revision: 0,
             prefs,
+            history,
             engine: Engine::new(),
             load_generation: 0,
         };
@@ -133,6 +140,7 @@ impl PlayerStore {
         self.load_generation += 1;
         let generation = self.load_generation;
         let bin = self.prefs.read(cx).prefs.ytdlp_path.clone();
+        self.history.update(cx, |h, cx| h.record(&track, cx));
         cx.notify();
 
         cx.spawn(async move |this, cx| {
