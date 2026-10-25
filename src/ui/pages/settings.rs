@@ -143,6 +143,18 @@ impl Render for SettingsPage {
             )
         };
 
+        let background = {
+            let s = prefs_store.clone();
+            checkbox(
+                "set-background",
+                "Keep playing in the tray when the window is closed",
+                prefs.keep_running_in_background,
+                move |on, _, cx| {
+                    s.update(cx, |p, cx| p.update(cx, |p| p.keep_running_in_background = on))
+                },
+            )
+        };
+
         let limit_menu = {
             let (open_s, select_s) = (prefs_store.clone(), prefs_store.clone());
             dropdown(
@@ -224,6 +236,7 @@ impl Render for SettingsPage {
                     ),
             ))
             .child(section("Playback", autoplay))
+            .child(section("Background", background))
             .child(section(
                 "Search",
                 div()

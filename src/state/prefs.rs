@@ -18,6 +18,8 @@ pub struct Prefs {
     /// Downloaded audio kept on disk, in megabytes.
     pub cache_limit_mb: u64,
     pub sidebar_collapsed: bool,
+    /// Keep playing from the tray when the window is closed.
+    pub keep_running_in_background: bool,
 }
 
 impl Default for Prefs {
@@ -29,6 +31,7 @@ impl Default for Prefs {
             search_limit: 15,
             cache_limit_mb: 1024,
             sidebar_collapsed: false,
+            keep_running_in_background: true,
         }
     }
 }

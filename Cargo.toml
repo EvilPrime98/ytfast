@@ -25,6 +25,9 @@ tracing-appender = "0.2"
 open = "5"
 rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-aac", "symphonia-isomp4", "symphonia-mp3", "symphonia-vorbis", "symphonia-flac", "symphonia-wav"] }
 
+[target.'cfg(windows)'.dependencies]
+tray-icon = { version = "0.21", default-features = false }
+
 [build-dependencies]
 winresource = "0.1"
 

@@ -77,14 +77,14 @@ pub struct AppRoot {
 }
 
 impl AppRoot {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    /// `stores` outlive the window (they are created once in `main`), so playback and the
+    /// library survive closing the window to the tray.
+    pub fn new(stores: Stores, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
 
-        let stores = Stores::new(cx);
         let toasts = toast::init(cx);
         let confirm = confirm::init(cx);
-        cx.set_global(stores.clone());
 
         let sidebar = cx.new(|cx| Sidebar::new(stores.clone(), cx));
         let player_bar = cx.new(|cx| PlayerBar::new(stores.clone(), cx));
