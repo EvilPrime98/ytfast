@@ -5,15 +5,15 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    Bounds, Context, EventEmitter, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Window, canvas, div, px,
-    relative,
+    Bounds, Context, Entity, EventEmitter, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
+    StatefulInteractiveElement, Styled, Window, canvas, div, px, relative,
 };
 
 use crate::model::format_duration;
 use crate::route::{Navigate, Route};
 use crate::state::Stores;
-use crate::state::player::PlayState;
+use crate::state::player::{PlayState, PlayerStore};
 use crate::ui::components::track_row::thumbnail;
 use crate::ui::icons::{Icon, icon};
 use crate::ui::{theme, toast};
@@ -23,6 +23,8 @@ pub struct PlayerBar {
     /// Where the seek / volume bars were laid out last frame, to turn a click into a fraction.
     seek_bounds: Rc<Cell<Bounds<Pixels>>>,
     volume_bounds: Rc<Cell<Bounds<Pixels>>>,
+    /// True from mouse-down on the volume bar until the button is released.
+    volume_dragging: Rc<Cell<bool>>,
 }
 
 impl EventEmitter<Navigate> for PlayerBar {}
@@ -44,16 +46,48 @@ impl PlayerBar {
             stores,
             seek_bounds: Rc::default(),
             volume_bounds: Rc::default(),
+            volume_dragging: Rc::default(),
         }
     }
 }
 
-fn fraction(bounds: Bounds<Pixels>, ev: &MouseDownEvent) -> f32 {
+fn fraction(bounds: Bounds<Pixels>, position: Point<Pixels>) -> f32 {
     let width = f32::from(bounds.size.width);
     if width <= 0.0 {
         return 0.0;
     }
-    (f32::from(ev.position.x - bounds.origin.x) / width).clamp(0.0, 1.0)
+    (f32::from(position.x - bounds.origin.x) / width).clamp(0.0, 1.0)
+}
+
+/// While `dragging` is set, follows the mouse anywhere in the window (not just over the bar)
+/// and writes the position under it to the volume; releasing the button ends the drag.
+fn volume_drag(
+    bounds: Rc<Cell<Bounds<Pixels>>>,
+    dragging: Rc<Cell<bool>>,
+    player: Entity<PlayerStore>,
+) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |_, _, window, _| {
+            window.on_mouse_event({
+                let dragging = dragging.clone();
+                move |ev: &MouseMoveEvent, phase, _, cx| {
+                    if !phase.bubble() || !dragging.get() {
+                        return;
+                    }
+                    let f = fraction(bounds.get(), ev.position);
+                    player.update(cx, |p, cx| p.set_volume(f, cx));
+                }
+            });
+            window.on_mouse_event(move |ev: &MouseUpEvent, phase, _, _| {
+                if phase.bubble() && ev.button == MouseButton::Left {
+                    dragging.set(false);
+                }
+            });
+        },
+    )
+    .absolute()
+    .size_full()
 }
 
 /// A clickable horizontal bar filled to `filled` (0..=1). `bounds` is refreshed every frame.
@@ -142,6 +176,7 @@ impl Render for PlayerBar {
         let stores = self.stores.clone();
         let seek_bounds = self.seek_bounds.clone();
         let volume_bounds = self.volume_bounds.clone();
+        let volume_dragging = self.volume_dragging.clone();
 
         div()
             .flex()
@@ -272,7 +307,7 @@ impl Render for PlayerBar {
                                 bar("bar-seek", progress, seek_bounds.clone()).on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                                        let f = fraction(seek_bounds.get(), ev);
+                                        let f = fraction(seek_bounds.get(), ev.position);
                                         this.stores
                                             .player
                                             .update(cx, |p, cx| p.seek_fraction(f, cx));
@@ -340,15 +375,27 @@ impl Render for PlayerBar {
                             ),
                     )
                     .child(icon(Icon::Volume, px(18.0)).text_color(theme::text_muted()))
-                    .child(div().w(px(96.0)).flex().child(
-                        bar("bar-volume", volume, volume_bounds.clone()).on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                                let f = fraction(volume_bounds.get(), ev);
-                                this.stores.player.update(cx, |p, cx| p.set_volume(f, cx));
-                            }),
-                        ),
-                    )),
+                    .child(
+                        div()
+                            .relative()
+                            .w(px(96.0))
+                            .flex()
+                            .child(volume_drag(
+                                volume_bounds.clone(),
+                                volume_dragging.clone(),
+                                stores.player.clone(),
+                            ))
+                            .child(
+                                bar("bar-volume", volume, volume_bounds.clone()).on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                                        volume_dragging.set(true);
+                                        let f = fraction(volume_bounds.get(), ev.position);
+                                        this.stores.player.update(cx, |p, cx| p.set_volume(f, cx));
+                                    }),
+                                ),
+                            ),
+                    ),
             )
     }
 }
