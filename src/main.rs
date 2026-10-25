@@ -27,7 +27,12 @@ fn hides_to_tray(cx: &App) -> bool {
     #[cfg(windows)]
     {
         platform::tray::shown()
-            && cx.global::<Stores>().prefs.read(cx).prefs.keep_running_in_background
+            && cx
+                .global::<Stores>()
+                .prefs
+                .read(cx)
+                .prefs
+                .keep_running_in_background
     }
     #[cfg(not(windows))]
     {
@@ -132,7 +137,9 @@ fn open_main_window(cx: &mut App) {
         ..Default::default()
     };
     let stores = cx.global::<Stores>().clone();
-    cx.open_window(options, |window, cx| cx.new(|cx| AppRoot::new(stores, window, cx)))
-        .unwrap();
+    cx.open_window(options, |window, cx| {
+        cx.new(|cx| AppRoot::new(stores, window, cx))
+    })
+    .unwrap();
     cx.activate(true);
 }
