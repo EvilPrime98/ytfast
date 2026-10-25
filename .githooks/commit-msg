@@ -1,0 +1,14 @@
+#!/bin/sh
+# Reject commit messages that carry a Co-authored-by trailer.
+
+msg_file="$1"
+
+content=$(git stripspace --strip-comments < "$msg_file")
+
+if printf '%s\n' "$content" | grep -qiE '^[[:space:]]*co-authored-by[[:space:]]*:'; then
+	echo "commit-msg: Co-authored-by trailers are not allowed here." >&2
+	echo "            Remove the trailer, then commit again." >&2
+	exit 1
+fi
+
+exit 0
