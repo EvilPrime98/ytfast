@@ -15,18 +15,6 @@ in a small native window with a queue, a saved library and a player bar.
   size set in *Settings* at startup.
 - Thumbnails come from `i.ytimg.com`. Everything else is local.
 
-## Pages
-
-| Page | What it does |
-| --- | --- |
-| Search | Search box (Enter), results, play / queue / save per track, *Play all* |
-| Now playing | Current track, the queue, remove tracks, clear queue |
-| Library | Tracks saved with the heart; stored in `<config dir>/YTFast/library.json` |
-| Settings | yt-dlp path, autoplay, results per search, audio cache size / limit |
-
-Keys: `Space` play / pause (when not typing), `Ctrl+Left` / `Ctrl+Right` previous / next,
-`Alt+Left` / `Alt+Right` back / forward, `F11` fullscreen.
-
 ## Build
 
 ```sh
