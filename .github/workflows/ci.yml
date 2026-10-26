@@ -10,8 +10,26 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  quick:
+    name: Quick check (Windows)
+    if: ${{ github.base_ref != 'main' && github.ref_name != 'main' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Check
+        run: cargo check --locked --workspace --all-targets
+
   windows:
     name: Build & test (Windows)
+    if: ${{ github.base_ref == 'main' || github.ref_name == 'main' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +50,7 @@ jobs:
 
   linux:
     name: Build & test (Linux)
+    if: ${{ github.base_ref == 'main' || github.ref_name == 'main' }}
     runs-on: ubuntu-latest
     # The package list below is unverified.
     continue-on-error: true
