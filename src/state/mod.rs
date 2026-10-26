@@ -1,5 +1,6 @@
 //! App state: one entity per data domain, shared through a gpui `Global`.
 
+pub mod feed;
 pub mod history;
 pub mod library;
 pub mod player;
@@ -17,6 +18,7 @@ pub struct Stores {
     pub library: Entity<library::LibraryStore>,
     pub history: Entity<history::HistoryStore>,
     pub search: Entity<search::SearchStore>,
+    pub feed: Entity<feed::FeedStore>,
     pub thumbs: Entity<thumbs::Thumbnails>,
     pub player: Entity<player::PlayerStore>,
 }
@@ -36,6 +38,7 @@ impl Stores {
             library: cx.new(|_| library::LibraryStore::load()),
             history,
             search: cx.new(|_| search::SearchStore::default()),
+            feed: cx.new(|_| feed::FeedStore::load()),
             thumbs: cx.new(|_| thumbs::Thumbnails::default()),
             player,
             prefs,

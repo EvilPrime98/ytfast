@@ -1,8 +1,10 @@
 //! Library: the tracks the user saved with the heart.
 
+use std::ops::Range;
+
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement,
-    Styled, Subscription, Window, div, prelude::*, px,
+    Context, IntoElement, ParentElement, Render, Styled, Subscription, Window, div, prelude::*, px,
+    uniform_list,
 };
 
 use crate::state::Stores;
@@ -58,47 +60,6 @@ impl LibraryPage {
 impl Render for LibraryPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tracks = self.stores.library.read(cx).tracks.clone();
-        let playing_id = self.stores.player.read(cx).current().map(|t| t.id.clone());
-
-        let rows: Vec<_> = tracks
-            .iter()
-            .enumerate()
-            .map(|(ix, track)| {
-                let thumb = self.stores.thumbs.read(cx).get(&track.id);
-                let play_stores = self.stores.clone();
-                let all = tracks.clone();
-                let queue_stores = self.stores.clone();
-                let queue_track = track.clone();
-                let remove_stores = self.stores.clone();
-                let remove_track = track.clone();
-                track_row(
-                    "library",
-                    ix,
-                    track,
-                    thumb,
-                    playing_id.as_deref() == Some(track.id.as_str()),
-                    move |_, cx| {
-                        play_stores
-                            .player
-                            .update(cx, |p, cx| p.play_tracks(all.clone(), ix, cx))
-                    },
-                    vec![
-                        RowAction::new(Icon::Plus, move |_, cx| {
-                            queue_stores
-                                .player
-                                .update(cx, |p, cx| p.enqueue(queue_track.clone(), cx));
-                            toast::success(cx, "Added to queue");
-                        }),
-                        RowAction::new(Icon::Trash, move |_, cx| {
-                            remove_stores
-                                .library
-                                .update(cx, |l, cx| l.toggle(&remove_track, cx));
-                        }),
-                    ],
-                )
-            })
-            .collect();
-
         let stores = self.stores.clone();
         let all = tracks.clone();
         div()
@@ -151,16 +112,56 @@ impl Render for LibraryPage {
                     )
                     .into_any_element()
             } else {
-                div()
-                    .id("library-list")
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .gap(px(2.0))
-                    .children(rows)
-                    .into_any_element()
+                uniform_list(
+                    "library-list",
+                    tracks.len(),
+                    cx.processor(|this, range: Range<usize>, _window, cx| {
+                        let tracks = this.stores.library.read(cx).tracks.clone();
+                        let playing_id =
+                            this.stores.player.read(cx).current().map(|t| t.id.clone());
+                        range
+                            .filter_map(|ix| {
+                                let track = tracks.get(ix)?;
+                                let thumb = this.stores.thumbs.read(cx).get(&track.id);
+                                let play_stores = this.stores.clone();
+                                let all = tracks.clone();
+                                let queue_stores = this.stores.clone();
+                                let queue_track = track.clone();
+                                let remove_stores = this.stores.clone();
+                                let remove_track = track.clone();
+                                let row = track_row(
+                                    "library",
+                                    ix,
+                                    track,
+                                    thumb,
+                                    playing_id.as_deref() == Some(track.id.as_str()),
+                                    move |_, cx| {
+                                        play_stores
+                                            .player
+                                            .update(cx, |p, cx| p.play_tracks(all.clone(), ix, cx))
+                                    },
+                                    vec![
+                                        RowAction::new(Icon::Plus, move |_, cx| {
+                                            queue_stores.player.update(cx, |p, cx| {
+                                                p.enqueue(queue_track.clone(), cx)
+                                            });
+                                            toast::success(cx, "Added to queue");
+                                        }),
+                                        RowAction::new(Icon::Trash, move |_, cx| {
+                                            remove_stores
+                                                .library
+                                                .update(cx, |l, cx| l.toggle(&remove_track, cx));
+                                        }),
+                                    ],
+                                );
+                                Some(div().pb(px(2.0)).child(row))
+                            })
+                            .collect()
+                    }),
+                )
+                .flex_1()
+                .min_h_0()
+                .into_any_element()
             })
     }
 }

@@ -83,6 +83,29 @@ pub async fn resolve(bin: &str, url: &str) -> Result<Vec<Track>, YtError> {
     parse_tracks(&run(cmd).await?)
 }
 
+/// YouTube's radio mix for `id`.
+pub async fn related(bin: &str, id: &str) -> Result<Vec<Track>, YtError> {
+    resolve(
+        bin,
+        &format!("https://www.youtube.com/watch?v={id}&list=RD{id}"),
+    )
+    .await
+}
+
+/// The music chart, used when there is no history yet. YouTube has changed this feed before, so a
+/// failure or an empty page falls back to a plain search.
+pub async fn trending(bin: &str) -> Result<Vec<Track>, YtError> {
+    let chart = resolve(
+        bin,
+        "https://www.youtube.com/feed/trending?bp=4gINGgt5dG1hX2NoYXJ0cw%3D%3D",
+    )
+    .await;
+    match chart {
+        Ok(tracks) if !tracks.is_empty() => Ok(tracks),
+        _ => search(bin, "top songs this week", 20).await,
+    }
+}
+
 /// Turn yt-dlp's `-J` output (a single video or a playlist) into tracks.
 pub fn parse_tracks(json: &str) -> Result<Vec<Track>, YtError> {
     let root: Value = serde_json::from_str(json).map_err(|e| YtError::Parse(e.to_string()))?;
