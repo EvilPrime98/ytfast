@@ -1,11 +1,12 @@
 //! The play queue and the transport (play / pause / seek / volume). Owns the audio engine.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{Context, Entity};
 
 use crate::api::ytdlp;
-use crate::audio::Engine;
+use crate::audio::{Engine, Growth};
 use crate::model::Track;
 use crate::runtime;
 use crate::state::history::HistoryStore;
@@ -27,6 +28,10 @@ pub const SPEEDS: [f32; 7] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 /// A track within this long of its start restarts on "previous"; later it goes to the one before.
 const RESTART_THRESHOLD: Duration = Duration::from_secs(3);
 
+const STREAM_MIN_DURATION: u64 = 10 * 60;
+
+const SEEK_MARGIN: f32 = 0.01;
+
 pub struct PlayerStore {
     pub queue: Vec<Track>,
     /// Index into `queue` of the current track.
@@ -41,6 +46,7 @@ pub struct PlayerStore {
     prefs: Entity<PrefsStore>,
     history: Entity<HistoryStore>,
     engine: Engine,
+    growth: Option<Arc<Growth>>,
     /// Bumped per load so a slow download of a skipped track is dropped.
     load_generation: u64,
 }
@@ -69,6 +75,7 @@ impl PlayerStore {
             prefs,
             history,
             engine: Engine::new(),
+            growth: None,
             load_generation: 0,
         };
         // Poll the audio thread. Ends when the store is dropped.
@@ -97,6 +104,18 @@ impl PlayerStore {
             cx.notify();
             return;
         }
+        match self.growth.as_ref() {
+            Some(g) if g.is_failed() => {
+                self.growth = None;
+                self.state = PlayState::Idle;
+                self.engine.stop();
+                toast::error(cx, "The download failed.".to_string());
+                cx.notify();
+                return;
+            }
+            Some(g) if !g.is_running() => self.growth = None,
+            _ => {}
+        }
         if self.state != PlayState::Playing {
             return;
         }
@@ -123,10 +142,17 @@ impl PlayerStore {
             _ => {
                 self.state = PlayState::Idle;
                 self.position = Duration::ZERO;
-                self.engine.stop();
+                self.stop_engine();
                 cx.notify();
             }
         }
+    }
+
+    fn stop_engine(&mut self) {
+        if let Some(g) = self.growth.take() {
+            g.fail();
+        }
+        self.engine.stop();
     }
 
     /// Replace the queue with `tracks` and start `start`.
@@ -140,7 +166,7 @@ impl PlayerStore {
         let Some(track) = self.queue.get(ix).cloned() else {
             return;
         };
-        self.engine.stop();
+        self.stop_engine();
         self.index = Some(ix);
         self.state = PlayState::Loading;
         self.position = Duration::ZERO;
@@ -149,24 +175,30 @@ impl PlayerStore {
         self.load_generation += 1;
         let generation = self.load_generation;
         let bin = self.prefs.read(cx).prefs.ytdlp_path.clone();
+        let stream = track
+            .duration_secs
+            .is_some_and(|d| d >= STREAM_MIN_DURATION);
         self.history.update(cx, |h, cx| h.record(&track, cx));
         cx.notify();
 
         cx.spawn(async move |this, cx| {
             let id = track.id.clone();
-            let result =
-                runtime::run(
-                    async move { ytdlp::download_audio(&bin, &id, &ytdlp::cache_dir()).await },
-                )
-                .await;
+            let result = runtime::run(async move {
+                ytdlp::download_audio(&bin, &id, &ytdlp::cache_dir(), stream).await
+            })
+            .await;
             let error = this
                 .update(cx, |s, cx| {
                     if s.load_generation != generation {
+                        if let Ok(d) = &result {
+                            d.growth.fail();
+                        }
                         return None;
                     }
                     let error = match result {
-                        Ok(path) => {
-                            s.engine.load(path, s.volume, s.speed);
+                        Ok(d) => {
+                            s.engine.load(d.file, d.growth.clone(), s.volume, s.speed);
+                            s.growth = Some(d.growth);
                             s.state = PlayState::Playing;
                             None
                         }
@@ -230,7 +262,14 @@ impl PlayerStore {
         ) else {
             return;
         };
-        let to = duration.mul_f32(fraction.clamp(0.0, 1.0));
+        let mut fraction = fraction.clamp(0.0, 1.0);
+        if let Some(g) = self.growth.as_ref().filter(|g| g.is_running()) {
+            let Some(have) = g.fraction() else {
+                return;
+            };
+            fraction = fraction.min((have - SEEK_MARGIN).max(0.0));
+        }
+        let to = duration.mul_f32(fraction);
         self.engine.seek(to);
         self.position = to;
         cx.notify();
@@ -273,7 +312,7 @@ impl PlayerStore {
         match self.index {
             Some(cur) if cur == ix => {
                 self.load_generation += 1;
-                self.engine.stop();
+                self.stop_engine();
                 self.index = None;
                 self.state = PlayState::Idle;
                 self.position = Duration::ZERO;
@@ -286,7 +325,7 @@ impl PlayerStore {
 
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.load_generation += 1;
-        self.engine.stop();
+        self.stop_engine();
         self.queue.clear();
         self.index = None;
         self.state = PlayState::Idle;

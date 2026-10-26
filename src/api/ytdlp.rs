@@ -2,12 +2,18 @@
 //!
 //! The binary is looked up on `PATH` unless the user points the settings at a specific file.
 
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::Value;
-use tokio::process::Command;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::process::{Child, ChildStderr, ChildStdout, Command};
+use tokio::sync::oneshot;
 
+use crate::audio::Growth;
 use crate::model::Track;
 
 #[derive(Debug, thiserror::Error)]
@@ -146,11 +152,26 @@ fn cached(dir: &Path, id: &str) -> Option<PathBuf> {
     })
 }
 
+const PROGRESS_TEMPLATE: &str = "download:%(progress.tmpfilename)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s";
+
+pub struct Download {
+    pub file: File,
+    pub growth: Arc<Growth>,
+}
+
 /// Download the best audio stream of `id` into `dir` (m4a preferred: the player decodes it
-/// natively) and return the file. A previous download is reused.
-pub async fn download_audio(bin: &str, id: &str, dir: &Path) -> Result<PathBuf, YtError> {
+pub async fn download_audio(
+    bin: &str,
+    id: &str,
+    dir: &Path,
+    stream: bool,
+) -> Result<Download, YtError> {
     if let Some(p) = cached(dir, id) {
-        return Ok(p);
+        let file = File::open(p).map_err(|e| YtError::Failed(e.to_string()))?;
+        return Ok(Download {
+            file,
+            growth: Growth::complete(),
+        });
     }
     std::fs::create_dir_all(dir).map_err(|e| YtError::Failed(e.to_string()))?;
     let mut cmd = command(bin);
@@ -158,14 +179,142 @@ pub async fn download_audio(bin: &str, id: &str, dir: &Path) -> Result<PathBuf, 
         "-f",
         "bestaudio[ext=m4a]/bestaudio",
         "--no-playlist",
-        "--no-part",
         "--no-warnings",
-        "-o",
-    ])
-    .arg(dir.join("%(id)s.%(ext)s"))
-    .arg(format!("https://www.youtube.com/watch?v={id}"));
-    run(cmd).await?;
-    cached(dir, id).ok_or_else(|| YtError::Failed("the download left no audio file".into()))
+        "--quiet",
+        "--progress",
+        "--newline",
+        "--progress-template",
+        PROGRESS_TEMPLATE,
+    ]);
+    if stream {
+        cmd.args(["--fixup", "never"]);
+    } else {
+        cmd.arg("--no-part");
+    }
+    cmd.arg("-o")
+        .arg(dir.join("%(id)s.%(ext)s"))
+        .arg(format!("https://www.youtube.com/watch?v={id}"))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => YtError::NotFound,
+        _ => YtError::Failed(e.to_string()),
+    })?;
+    let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+        return Err(YtError::Failed("could not read yt-dlp's output".into()));
+    };
+
+    let growth = Growth::new();
+    let (ready_tx, ready_rx) = oneshot::channel();
+    tokio::spawn(supervise(
+        child,
+        stdout,
+        stderr,
+        Job {
+            dir: dir.to_path_buf(),
+            id: id.to_string(),
+            start_bytes: stream.then_some(START_BYTES),
+        },
+        growth.clone(),
+        ready_tx,
+    ));
+    let file = ready_rx
+        .await
+        .map_err(|_| YtError::Failed("the download ended unexpectedly".into()))??;
+    Ok(Download { file, growth })
+}
+
+const START_BYTES: u64 = 512 * 1024;
+
+struct Job {
+    dir: PathBuf,
+    id: String,
+    start_bytes: Option<u64>,
+}
+
+async fn supervise(
+    mut child: Child,
+    stdout: ChildStdout,
+    stderr: ChildStderr,
+    job: Job,
+    growth: Arc<Growth>,
+    ready: oneshot::Sender<Result<File, YtError>>,
+) {
+    let mut ready = Some(ready);
+    let errors = tokio::spawn(async move {
+        let mut text = String::new();
+        let _ = BufReader::new(stderr).read_to_string(&mut text).await;
+        text
+    });
+
+    let mut lines = BufReader::new(stdout).lines();
+    let mut watch = tokio::time::interval(Duration::from_millis(200));
+    loop {
+        tokio::select! {
+            line = lines.next_line() => {
+                let Ok(Some(line)) = line else { break };
+                let Some((part, downloaded, total)) = parse_progress(&line) else { continue };
+                growth.set_progress(downloaded, total);
+                let enough = job.start_bytes.is_some_and(|min| downloaded >= min);
+                if enough && ready.is_some() {
+                    let file = File::open(&part).or_else(|_| open_cached(&job.dir, &job.id));
+                    if let Some(tx) = ready.take() {
+                        let _ = tx.send(file.map_err(|e| YtError::Failed(e.to_string())));
+                    }
+                }
+            }
+            _ = watch.tick() => {
+                if !growth.is_running() {
+                    let _ = child.kill().await;
+                    break;
+                }
+            }
+        }
+    }
+
+    let status = child.wait().await;
+    let outcome = match status {
+        Ok(s) if s.success() && growth.is_running() => {
+            open_cached(&job.dir, &job.id).map_err(|e| YtError::Failed(e.to_string()))
+        }
+        Ok(_) if !growth.is_running() => Err(YtError::Failed("the download was cancelled".into())),
+        Ok(_) => {
+            let text = errors.await.unwrap_or_default();
+            Err(YtError::Failed(last_error_line(&text)))
+        }
+        Err(e) => Err(YtError::Failed(e.to_string())),
+    };
+    match outcome {
+        Ok(file) => {
+            growth.finish();
+            if let Some(tx) = ready.take() {
+                let _ = tx.send(Ok(file));
+            }
+        }
+        Err(e) => {
+            tracing::warn!("download of {} failed: {e}", job.id);
+            growth.fail();
+            if let Some(tx) = ready.take() {
+                let _ = tx.send(Err(e));
+            }
+        }
+    }
+}
+
+fn open_cached(dir: &Path, id: &str) -> std::io::Result<File> {
+    match cached(dir, id) {
+        Some(p) => File::open(p),
+        None => Err(std::io::Error::other("the download left no audio file")),
+    }
+}
+
+fn parse_progress(line: &str) -> Option<(PathBuf, u64, Option<u64>)> {
+    let mut fields = line.trim().rsplitn(4, '|');
+    let estimate = fields.next()?.parse::<u64>().ok();
+    let total = fields.next()?.parse::<u64>().ok();
+    let downloaded = fields.next()?.parse::<u64>().ok()?;
+    let part = fields.next()?;
+    Some((PathBuf::from(part), downloaded, total.or(estimate)))
 }
 
 /// Delete the oldest cached files until the folder is under `max_bytes`.
@@ -238,6 +387,17 @@ mod tests {
     #[test]
     fn rejects_garbage() {
         assert!(parse_tracks("not json").is_err());
+    }
+
+    #[test]
+    fn parses_progress_lines() {
+        let (part, done, total) =
+            parse_progress("C:\\c\\a|b\\id.m4a.part|1024|204129073|NA\r\n").unwrap();
+        assert_eq!(part, PathBuf::from("C:\\c\\a|b\\id.m4a.part"));
+        assert_eq!((done, total), (1024, Some(204129073)));
+        let (_, _, total) = parse_progress("id.m4a.part|5|NA|900").unwrap();
+        assert_eq!(total, Some(900));
+        assert!(parse_progress("[download] Destination: x").is_none());
     }
 
     #[test]
