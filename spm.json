@@ -1,12 +1,14 @@
 {
   "repos": [
-    "https://github.com/EvilPrime98/mySkills"
+    "https://github.com/EvilPrime98/mySkills",
+    "https://github.com/aiwithremy/claude-skills-llm-council"
   ],
   "skills": {
     "git-commit-doctor": "https://github.com/EvilPrime98/mySkills",
     "gpui-desktop": "https://github.com/EvilPrime98/mySkills",
     "graphify": "https://github.com/EvilPrime98/mySkills",
     "less-is-more": "https://github.com/EvilPrime98/mySkills",
+    "llm-council": "https://github.com/aiwithremy/claude-skills-llm-council",
     "reenforcement": "https://github.com/EvilPrime98/mySkills",
     "repo-professionalizer": "https://github.com/EvilPrime98/mySkills",
     "silencer": "https://github.com/EvilPrime98/mySkills"
