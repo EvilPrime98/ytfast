@@ -1,5 +1,7 @@
 //! One page per route.
 
+pub mod channel;
+pub mod channels;
 pub mod history;
 pub mod home;
 pub mod library;

@@ -1,5 +1,7 @@
 //! Routing. GPUI has no router: an `enum Route` plus a back/forward stack.
 
+use crate::model::Channel;
+
 /// App pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
@@ -12,6 +14,8 @@ pub enum Route {
     /// Saved tracks.
     Library,
     History,
+    Channels,
+    Channel(Channel),
     Settings,
 }
 
@@ -28,6 +32,8 @@ impl Route {
             Self::NowPlaying => "Now playing",
             Self::Library => "Library",
             Self::History => "History",
+            Self::Channels => "Channels",
+            Self::Channel(_) => "Channel",
             Self::Settings => "Settings",
         }
     }

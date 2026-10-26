@@ -5,6 +5,7 @@ use gpui::{Pixels, Styled, Svg, svg};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Icon {
+    Bell,
     Burger,
     ChevronDown,
     Close,
@@ -21,6 +22,7 @@ pub enum Icon {
     Queue,
     Search,
     Trash,
+    Users,
     Volume,
     WinMinimize,
     WinMaximize,
@@ -29,7 +31,8 @@ pub enum Icon {
 
 impl Icon {
     #[cfg(test)]
-    pub const ALL: [Icon; 20] = [
+    pub const ALL: [Icon; 22] = [
+        Self::Bell,
         Self::Burger,
         Self::ChevronDown,
         Self::Close,
@@ -46,6 +49,7 @@ impl Icon {
         Self::Queue,
         Self::Search,
         Self::Trash,
+        Self::Users,
         Self::Volume,
         Self::WinMinimize,
         Self::WinMaximize,
@@ -54,6 +58,7 @@ impl Icon {
 
     pub fn path(self) -> &'static str {
         match self {
+            Self::Bell => "icons/bell.svg",
             Self::Burger => "icons/burger.svg",
             Self::ChevronDown => "icons/chevron-down.svg",
             Self::Close => "icons/close.svg",
@@ -70,6 +75,7 @@ impl Icon {
             Self::Queue => "icons/queue.svg",
             Self::Search => "icons/search.svg",
             Self::Trash => "icons/trash.svg",
+            Self::Users => "icons/users.svg",
             Self::Volume => "icons/volume.svg",
             Self::WinMinimize => "icons/win-minimize.svg",
             Self::WinMaximize => "icons/win-maximize.svg",

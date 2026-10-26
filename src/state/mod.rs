@@ -1,5 +1,6 @@
 //! App state: one entity per data domain, shared through a gpui `Global`.
 
+pub mod channels;
 pub mod feed;
 pub mod history;
 pub mod library;
@@ -17,6 +18,7 @@ pub struct Stores {
     pub prefs: Entity<prefs::PrefsStore>,
     pub library: Entity<library::LibraryStore>,
     pub history: Entity<history::HistoryStore>,
+    pub channels: Entity<channels::ChannelsStore>,
     pub search: Entity<search::SearchStore>,
     pub feed: Entity<feed::FeedStore>,
     pub thumbs: Entity<thumbs::Thumbnails>,
@@ -34,9 +36,22 @@ impl Stores {
             let history = history.clone();
             |cx| player::PlayerStore::new(prefs, history, cx)
         });
+        let channels = cx.new(|_| channels::ChannelsStore::load());
+        channels.update(cx, |c, cx| c.start_polling(prefs.clone(), cx));
+        cx.observe(&player, {
+            let channels = channels.clone();
+            move |player, cx| {
+                let id = player.read(cx).current().map(|t| t.id.clone());
+                if let Some(id) = id {
+                    channels.update(cx, |c, cx| c.mark_seen(&id, cx));
+                }
+            }
+        })
+        .detach();
         Self {
             library: cx.new(|_| library::LibraryStore::load()),
             history,
+            channels,
             search: cx.new(|_| search::SearchStore::default()),
             feed: cx.new(|_| feed::FeedStore::load()),
             thumbs: cx.new(|_| thumbs::Thumbnails::default()),

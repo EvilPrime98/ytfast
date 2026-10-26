@@ -302,6 +302,7 @@ impl Render for PlayerBar {
                                 div()
                                     .w(px(40.0))
                                     .flex_none()
+                                    .whitespace_nowrap()
                                     .child(format_duration(Some(position.as_secs()))),
                             )
                             .child(
@@ -316,9 +317,11 @@ impl Render for PlayerBar {
                                 ),
                             )
                             .child(
-                                div().w(px(40.0)).flex_none().child(format_duration(
-                                    duration.map(|d: Duration| d.as_secs()),
-                                )),
+                                div()
+                                    .w(px(40.0))
+                                    .flex_none()
+                                    .whitespace_nowrap()
+                                    .child(format_duration(duration.map(|d: Duration| d.as_secs()))),
                             ),
                     ),
             )

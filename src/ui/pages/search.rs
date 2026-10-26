@@ -1,14 +1,17 @@
 //! Search page: a search box (or a pasted YouTube link) and the results.
 
 use gpui::{
-    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
+    Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement, Render,
     StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*, px,
 };
 
+use crate::route::{Navigate, Route};
 use crate::state::Stores;
+use crate::state::search::SearchMode;
 use crate::ui::components::button::{ButtonVariant, button};
 use crate::ui::components::text_input::{TextInput, TextInputEvent};
 use crate::ui::components::track_row::{RowAction, track_row};
+use crate::ui::components::video_card::avatar;
 use crate::ui::icons::{Icon, icon};
 use crate::ui::{theme, toast};
 
@@ -17,6 +20,8 @@ pub struct SearchPage {
     input: Entity<TextInput>,
     _subs: Vec<Subscription>,
 }
+
+impl EventEmitter<Navigate> for SearchPage {}
 
 impl SearchPage {
     pub fn new(stores: Stores, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -39,15 +44,25 @@ impl SearchPage {
                     .iter()
                     .map(|t| t.id.clone())
                     .collect();
+                let avatars: Vec<_> = search
+                    .read(cx)
+                    .channels
+                    .iter()
+                    .map(|c| (c.id.clone(), c.avatar_url.clone()))
+                    .collect();
                 this.stores.thumbs.update(cx, |t, cx| {
                     for id in &ids {
                         t.ensure(id, cx);
+                    }
+                    for (id, url) in &avatars {
+                        t.ensure_avatar(id, url, cx);
                     }
                 });
                 cx.notify();
             }),
             cx.observe(&stores.thumbs, |_, _, cx| cx.notify()),
             cx.observe(&stores.library, |_, _, cx| cx.notify()),
+            cx.observe(&stores.channels, |_, _, cx| cx.notify()),
             cx.observe(&stores.player, |_, _, cx| cx.notify()),
         ];
         // Typing starts right away.
@@ -66,20 +81,146 @@ impl SearchPage {
             let p = &self.stores.prefs.read(cx).prefs;
             (p.ytdlp_path.clone(), p.search_limit)
         };
-        self.stores
-            .search
-            .update(cx, |s, cx| s.run(query, bin, limit, cx).detach());
+        self.stores.search.update(cx, |s, cx| match s.mode {
+            SearchMode::Videos => s.run(query, bin, limit, cx).detach(),
+            SearchMode::Channels => s.run_channels(query, bin, limit, cx).detach(),
+        });
+    }
+
+    fn channel_rows(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let channels = self.stores.search.read(cx).channels.clone();
+        channels
+            .into_iter()
+            .enumerate()
+            .map(|(ix, channel)| {
+                let image = self.stores.thumbs.read(cx).avatar(&channel.id);
+                let favorite = self.stores.channels.read(cx).is_favorite(&channel.id);
+                let (open, toggle) = (channel.clone(), channel.clone());
+                div()
+                    .id(("channel-row", ix))
+                    .flex()
+                    .items_center()
+                    .gap(px(12.0))
+                    .h(px(64.0))
+                    .px(px(10.0))
+                    .rounded(px(8.0))
+                    .hover(|s| s.bg(theme::bg_row_hover()))
+                    .child(
+                        div()
+                            .id(("channel-open", ix))
+                            .flex()
+                            .flex_1()
+                            .min_w_0()
+                            .items_center()
+                            .gap(px(12.0))
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |_, _, _, cx| {
+                                cx.emit(Navigate(Route::Channel(open.clone())))
+                            }))
+                            .child(avatar(image, 44.0))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(14.0))
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .child(channel.name.clone()),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id(("channel-fav", ix))
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .size(px(32.0))
+                            .rounded_full()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme::hover()))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.stores
+                                    .channels
+                                    .update(cx, |c, cx| c.toggle(&toggle, cx));
+                            }))
+                            .child(
+                                icon(
+                                    if favorite {
+                                        Icon::Heart
+                                    } else {
+                                        Icon::HeartOutline
+                                    },
+                                    px(18.0),
+                                )
+                                .text_color(if favorite {
+                                    theme::accent()
+                                } else {
+                                    theme::text_muted()
+                                }),
+                            ),
+                    )
+                    .into_any_element()
+            })
+            .collect()
+    }
+
+    fn mode_chip(
+        &self,
+        id: &'static str,
+        label: &'static str,
+        mode: SearchMode,
+        current: SearchMode,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let active = mode == current;
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .h(px(30.0))
+            .px(px(14.0))
+            .rounded_full()
+            .cursor_pointer()
+            .text_size(px(13.0))
+            .font_weight(gpui::FontWeight::MEDIUM)
+            .text_color(if active {
+                theme::on_accent()
+            } else {
+                theme::text_muted()
+            })
+            .bg(if active {
+                theme::accent()
+            } else {
+                theme::bg_panel()
+            })
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.stores.search.update(cx, |s, cx| s.set_mode(mode, cx))
+            }))
+            .child(label)
     }
 }
 
 impl Render for SearchPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let search = self.stores.search.read(cx);
+        let mode = search.mode;
         let results = search.results.clone();
         let loading = search.loading;
-        let searched = search.searched;
+        let channel_mode = mode == SearchMode::Channels;
+        let searched = if channel_mode {
+            search.channels_searched
+        } else {
+            search.searched
+        };
+        let channel_count = search.channels.len();
         let playing_id = self.stores.player.read(cx).current().map(|t| t.id.clone());
 
+        let channel_rows = if channel_mode {
+            self.channel_rows(cx)
+        } else {
+            Vec::new()
+        };
         let rows: Vec<_> = results
             .iter()
             .enumerate()
@@ -128,8 +269,21 @@ impl Render for SearchPage {
             })
             .collect();
 
-        let body = if loading {
+        let body = if channel_mode && !loading && searched && channel_count > 0 {
+            div()
+                .id("channel-results")
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .gap(px(2.0))
+                .children(channel_rows)
+                .into_any_element()
+        } else if loading {
             message("Searching…").into_any_element()
+        } else if channel_mode && !searched {
+            message("Type a channel name and press Enter").into_any_element()
         } else if !searched {
             div()
                 .flex()
@@ -152,6 +306,8 @@ impl Render for SearchPage {
                         .child("Type a song or artist and press Enter, or paste a video or playlist link."),
                 )
                 .into_any_element()
+        } else if channel_mode {
+            message("No channels found").into_any_element()
         } else if rows.is_empty() {
             message("No results").into_any_element()
         } else {
@@ -206,7 +362,7 @@ impl Render for SearchPage {
                             .child(icon(Icon::Search, px(18.0)).text_color(theme::text_muted()))
                             .child(self.input.clone()),
                     )
-                    .when(!results.is_empty(), |s| {
+                    .when(!channel_mode && !results.is_empty(), |s| {
                         s.child(button(
                             "search-play-all",
                             "Play all",
@@ -215,11 +371,24 @@ impl Render for SearchPage {
                         ))
                     }),
             )
+            .child(
+                div()
+                    .flex()
+                    .gap(px(8.0))
+                    .child(self.mode_chip("mode-videos", "Videos", SearchMode::Videos, mode, cx))
+                    .child(self.mode_chip(
+                        "mode-channels",
+                        "Channels",
+                        SearchMode::Channels,
+                        mode,
+                        cx,
+                    )),
+            )
             .child(body)
     }
 }
 
-fn message(text: &'static str) -> impl IntoElement {
+pub(super) fn message(text: impl Into<gpui::SharedString>) -> impl IntoElement {
     div()
         .flex()
         .flex_1()
@@ -227,5 +396,5 @@ fn message(text: &'static str) -> impl IntoElement {
         .justify_center()
         .text_size(px(14.0))
         .text_color(theme::text_muted())
-        .child(text)
+        .child(text.into())
 }
