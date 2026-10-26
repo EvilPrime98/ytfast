@@ -9,15 +9,22 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+mod stretch;
+
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source as _};
 
 enum Cmd {
-    Load { path: PathBuf, volume: f32 },
+    Load {
+        path: PathBuf,
+        volume: f32,
+        speed: f32,
+    },
     Pause,
     Resume,
     Stop,
     Seek(Duration),
     Volume(f32),
+    Speed(f32),
 }
 
 /// What the audio thread last reported.
@@ -54,9 +61,13 @@ impl Engine {
         let _ = self.tx.send(cmd);
     }
 
-    pub fn load(&self, path: PathBuf, volume: f32) {
+    pub fn load(&self, path: PathBuf, volume: f32, speed: f32) {
         *self.shared.lock().unwrap() = Snapshot::default();
-        self.send(Cmd::Load { path, volume });
+        self.send(Cmd::Load {
+            path,
+            volume,
+            speed,
+        });
     }
 
     pub fn pause(&self) {
@@ -81,6 +92,10 @@ impl Engine {
         self.send(Cmd::Volume(volume));
     }
 
+    pub fn set_speed(&self, speed: f32) {
+        self.send(Cmd::Speed(speed));
+    }
+
     pub fn snapshot(&self) -> Snapshot {
         self.shared.lock().unwrap().clone()
     }
@@ -98,6 +113,7 @@ fn audio_thread(rx: mpsc::Receiver<Cmd>, shared: Arc<Mutex<Snapshot>>) {
     // Opened on first use so a machine without an audio device still starts the app.
     let mut stream: Option<OutputStream> = None;
     let mut loaded: Option<Loaded> = None;
+    let tempo = stretch::Shared::new(1.0);
 
     let fail = |msg: String| {
         tracing::error!("audio: {msg}");
@@ -106,7 +122,11 @@ fn audio_thread(rx: mpsc::Receiver<Cmd>, shared: Arc<Mutex<Snapshot>>) {
 
     loop {
         match rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(Cmd::Load { path, volume }) => {
+            Ok(Cmd::Load {
+                path,
+                volume,
+                speed,
+            }) => {
                 if let Some(old) = loaded.take() {
                     old.sink.stop();
                 }
@@ -130,7 +150,8 @@ fn audio_thread(rx: mpsc::Receiver<Cmd>, shared: Arc<Mutex<Snapshot>>) {
                         let duration = source.total_duration();
                         let sink = Sink::connect_new(stream.as_ref().unwrap().mixer());
                         sink.set_volume(volume);
-                        sink.append(source);
+                        tempo.set_tempo(speed);
+                        sink.append(stretch::Stretch::new(source, tempo.clone()));
                         shared.lock().unwrap().duration = duration;
                         loaded = Some(Loaded { sink });
                     }
@@ -164,13 +185,14 @@ fn audio_thread(rx: mpsc::Receiver<Cmd>, shared: Arc<Mutex<Snapshot>>) {
                     l.sink.set_volume(v);
                 }
             }
+            Ok(Cmd::Speed(s)) => tempo.set_tempo(s),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
 
         if let Some(l) = &loaded {
             let mut s = shared.lock().unwrap();
-            s.position = l.sink.get_pos();
+            s.position = tempo.position();
             s.ended = l.sink.empty();
         }
     }
@@ -187,7 +209,7 @@ mod tests {
     fn plays_a_file() {
         let path = std::env::var("YTFAST_TEST_AUDIO").expect("set YTFAST_TEST_AUDIO");
         let engine = Engine::new();
-        engine.load(PathBuf::from(path), 0.0);
+        engine.load(PathBuf::from(path), 0.0, 1.0);
         std::thread::sleep(Duration::from_millis(1500));
         let snap = engine.snapshot();
         assert!(engine.take_error().is_none());

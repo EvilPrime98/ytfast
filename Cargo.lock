@@ -8528,6 +8528,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
+name = "wsola"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8149cd82a73bbde439d2b42a40a032de7dc28b1ec01919fcd0bd0456ecea75e6"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "x11"
 version = "2.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8703,6 +8712,7 @@ dependencies = [
  "tracing-subscriber",
  "tray-icon",
  "winresource",
+ "wsola",
 ]
 
 [[package]]

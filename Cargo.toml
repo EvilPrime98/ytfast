@@ -6,6 +6,7 @@ description = "A desktop audio-only player for YouTube, in the spirit of YouTube
 license = "MIT"
 
 [dependencies]
+wsola = "0.3"
 gpui-ce = "0.2.2"
 gpui_ce_platform = "0.1.0"
 anyhow = "1"
@@ -42,3 +43,6 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 1
+
+[profile.dev.package.wsola]
+opt-level = 3

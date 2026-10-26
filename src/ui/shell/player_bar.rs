@@ -147,6 +147,7 @@ impl Render for PlayerBar {
         let position = player.position;
         let duration = player.duration;
         let volume = player.volume;
+        let speed = player.speed;
         let has_prev = player.index.is_some();
         let has_next = player.index.is_some_and(|ix| ix + 1 < player.queue.len());
         let thumb = current
@@ -330,6 +331,31 @@ impl Render for PlayerBar {
                     .justify_end()
                     .gap(px(8.0))
                     .w(px(240.0))
+                    .child(
+                        div()
+                            .id("bar-speed")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .h(px(26.0))
+                            .min_w(px(44.0))
+                            .px(px(8.0))
+                            .rounded_full()
+                            .cursor_pointer()
+                            .text_size(px(12.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(if (speed - 1.0).abs() < 0.001 {
+                                theme::text_muted()
+                            } else {
+                                theme::accent()
+                            })
+                            .hover(|s| s.bg(theme::hover()))
+                            .on_click({
+                                let stores = stores.clone();
+                                move |_, _, cx| stores.player.update(cx, |p, cx| p.cycle_speed(cx))
+                            })
+                            .child(format!("{speed}x")),
+                    )
                     .child(
                         div()
                             .id("bar-save")
