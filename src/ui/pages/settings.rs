@@ -160,9 +160,7 @@ impl Render for SettingsPage {
                 "Notify about new videos from favorite channels",
                 prefs.channel_notifications,
                 move |on, _, cx| {
-                    s.update(cx, |p, cx| {
-                        p.update(cx, |p| p.channel_notifications = on)
-                    })
+                    s.update(cx, |p, cx| p.update(cx, |p| p.channel_notifications = on))
                 },
             )
         };

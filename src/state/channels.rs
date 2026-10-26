@@ -151,7 +151,11 @@ impl ChannelsStore {
     }
 
     pub fn toggle(&mut self, channel: &Channel, cx: &mut Context<Self>) {
-        if let Some(ix) = self.favorites.iter().position(|f| f.channel.id == channel.id) {
+        if let Some(ix) = self
+            .favorites
+            .iter()
+            .position(|f| f.channel.id == channel.id)
+        {
             self.favorites.remove(ix);
             self.changed(cx);
             return;
@@ -172,7 +176,11 @@ impl ChannelsStore {
     }
 
     pub fn update_channel(&mut self, channel: &Channel, cx: &mut Context<Self>) {
-        let Some(f) = self.favorites.iter_mut().find(|f| f.channel.id == channel.id) else {
+        let Some(f) = self
+            .favorites
+            .iter_mut()
+            .find(|f| f.channel.id == channel.id)
+        else {
             return;
         };
         let mut changed = false;
@@ -254,10 +262,11 @@ impl ChannelsStore {
                     cx.background_executor().timer(POLL_GAP).await;
                 }
                 let target = id.clone();
-                let result = runtime::run(async move {
-                    feeds::latest(&target).await.map_err(|e| e.to_string())
-                })
-                .await;
+                let result =
+                    runtime::run(
+                        async move { feeds::latest(&target).await.map_err(|e| e.to_string()) },
+                    )
+                    .await;
                 let id = id.clone();
                 let found = this
                     .update(cx, |s, cx| s.apply(&id, result, cx))
@@ -280,7 +289,11 @@ impl ChannelsStore {
     }
 
     pub fn check_all(&mut self, announce: bool, cx: &mut Context<Self>) -> Task<()> {
-        let ids = self.favorites.iter().map(|f| f.channel.id.clone()).collect();
+        let ids = self
+            .favorites
+            .iter()
+            .map(|f| f.channel.id.clone())
+            .collect();
         self.check(ids, announce, cx)
     }
 

@@ -137,11 +137,7 @@ pub fn avatar(image: Option<Arc<Image>>, size: f32) -> impl gpui::IntoElement {
         .overflow_hidden()
         .bg(theme::bg_panel());
     match image {
-        Some(image) => frame.child(
-            img(image)
-                .size(px(size))
-                .object_fit(ObjectFit::Cover),
-        ),
+        Some(image) => frame.child(img(image).size(px(size)).object_fit(ObjectFit::Cover)),
         None => frame.child(
             icon(crate::ui::icons::Icon::Users, size * 0.45).text_color(theme::text_muted()),
         ),

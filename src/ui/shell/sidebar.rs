@@ -21,7 +21,8 @@ impl Sidebar {
     pub fn new(stores: Stores, cx: &mut Context<Self>) -> Self {
         // The library count in the entry follows the store.
         cx.observe(&stores.library, |_, _, cx| cx.notify()).detach();
-        cx.observe(&stores.channels, |_, _, cx| cx.notify()).detach();
+        cx.observe(&stores.channels, |_, _, cx| cx.notify())
+            .detach();
         Self {
             stores,
             current: Route::home(),

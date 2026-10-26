@@ -100,7 +100,9 @@ pub async fn channel_videos(
         .arg(start.to_string())
         .arg("--playlist-end")
         .arg(end.to_string())
-        .arg(format!("https://www.youtube.com/channel/{channel_id}/videos"));
+        .arg(format!(
+            "https://www.youtube.com/channel/{channel_id}/videos"
+        ));
     parse_channel_page(&run(cmd).await?)
 }
 

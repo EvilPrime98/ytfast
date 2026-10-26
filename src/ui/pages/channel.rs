@@ -295,18 +295,16 @@ impl Render for ChannelPage {
                 .gap(px(16.0))
                 .child(div().flex().flex_wrap().gap(px(GRID_GAP)).children(cards))
                 .when(self.has_more, |s| {
-                    s.child(
-                        div().flex().justify_center().pb(px(8.0)).child(button(
-                            "channel-more",
-                            if self.loading {
-                                "Loading…"
-                            } else {
-                                "Load more"
-                            },
-                            ButtonVariant::Secondary,
-                            cx.listener(|this, _, _, cx| this.load_more(cx)),
-                        )),
-                    )
+                    s.child(div().flex().justify_center().pb(px(8.0)).child(button(
+                        "channel-more",
+                        if self.loading {
+                            "Loading…"
+                        } else {
+                            "Load more"
+                        },
+                        ButtonVariant::Secondary,
+                        cx.listener(|this, _, _, cx| this.load_more(cx)),
+                    )))
                 })
                 .into_any_element()
         };
