@@ -16,6 +16,17 @@ pub fn url(video_id: &str) -> String {
     format!("https://i.ytimg.com/vi/{video_id}/mqdefault.jpg")
 }
 
+pub async fn fetch_url(url: &str) -> Result<Vec<u8>, reqwest::Error> {
+    let bytes = client()
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    Ok(bytes.to_vec())
+}
+
 /// The raw JPEG bytes of the medium-quality thumbnail.
 pub async fn fetch(video_id: &str) -> Result<Vec<u8>, reqwest::Error> {
     let bytes = client()

@@ -21,6 +21,8 @@ impl Sidebar {
     pub fn new(stores: Stores, cx: &mut Context<Self>) -> Self {
         // The library count in the entry follows the store.
         cx.observe(&stores.library, |_, _, cx| cx.notify()).detach();
+        cx.observe(&stores.channels, |_, _, cx| cx.notify())
+            .detach();
         Self {
             stores,
             current: Route::home(),
@@ -31,7 +33,8 @@ impl Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let saved = self.stores.library.read(cx).tracks.len();
-        let entries: [(Route, Icon, String); 6] = [
+        let new_videos = self.stores.channels.read(cx).unseen_total();
+        let entries: [(Route, Icon, String); 7] = [
             (Route::Home, Icon::Music, "Home".into()),
             (Route::Search, Icon::Search, "Search".into()),
             (Route::NowPlaying, Icon::Queue, "Now playing".into()),
@@ -45,6 +48,15 @@ impl Render for Sidebar {
                 },
             ),
             (Route::History, Icon::History, "History".into()),
+            (
+                Route::Channels,
+                Icon::Users,
+                if new_videos > 0 {
+                    format!("Channels ({new_videos} new)")
+                } else {
+                    "Channels".into()
+                },
+            ),
             (Route::Settings, Icon::Gear, "Settings".into()),
         ];
         div()
@@ -63,7 +75,9 @@ impl Render for Sidebar {
                     .into_iter()
                     .enumerate()
                     .map(|(ix, (route, glyph, label))| {
-                        let active = route == self.current;
+                        let active = route == self.current
+                            || (route == Route::Channels
+                                && matches!(self.current, Route::Channel(_)));
                         let color = if active {
                             theme::text()
                         } else {

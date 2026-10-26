@@ -143,6 +143,43 @@ impl Render for SettingsPage {
             )
         };
 
+        let interval_options: Vec<(u64, SharedString)> = [
+            (15u64, "15 minutes"),
+            (30, "30 minutes"),
+            (60, "1 hour"),
+            (180, "3 hours"),
+        ]
+        .into_iter()
+        .map(|(m, l)| (m, l.into()))
+        .collect();
+
+        let channel_notify = {
+            let s = prefs_store.clone();
+            checkbox(
+                "set-channel-notify",
+                "Notify about new videos from favorite channels",
+                prefs.channel_notifications,
+                move |on, _, cx| {
+                    s.update(cx, |p, cx| p.update(cx, |p| p.channel_notifications = on))
+                },
+            )
+        };
+
+        let interval_menu = {
+            let (open_s, select_s) = (prefs_store.clone(), prefs_store.clone());
+            dropdown(
+                "set-interval",
+                interval_options,
+                prefs.channel_poll_minutes,
+                open == Some("set-interval"),
+                false,
+                move |o, cx| open_s.update(cx, |p, cx| p.set_menu_open("set-interval", o, cx)),
+                move |v, cx| {
+                    select_s.update(cx, |p, cx| p.update(cx, |p| p.channel_poll_minutes = v))
+                },
+            )
+        };
+
         let background = {
             let s = prefs_store.clone();
             checkbox(
@@ -239,6 +276,22 @@ impl Render for SettingsPage {
             ))
             .child(section("Playback", autoplay))
             .child(section("Background", background))
+            .child(section(
+                "Channels",
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.0))
+                    .child(channel_notify)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(12.0))
+                            .child(div().text_size(px(13.0)).child("Check every"))
+                            .child(interval_menu),
+                    ),
+            ))
             .child(section(
                 "Search",
                 div()

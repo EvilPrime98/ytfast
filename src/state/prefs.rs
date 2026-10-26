@@ -21,6 +21,8 @@ pub struct Prefs {
     pub sidebar_collapsed: bool,
     /// Keep playing from the tray when the window is closed.
     pub keep_running_in_background: bool,
+    pub channel_notifications: bool,
+    pub channel_poll_minutes: u64,
 }
 
 impl Default for Prefs {
@@ -34,6 +36,8 @@ impl Default for Prefs {
             cache_limit_mb: 1024,
             sidebar_collapsed: false,
             keep_running_in_background: true,
+            channel_notifications: true,
+            channel_poll_minutes: 30,
         }
     }
 }

@@ -14,7 +14,7 @@ use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::oneshot;
 
 use crate::audio::Growth;
-use crate::model::Track;
+use crate::model::{Channel, Track};
 
 #[derive(Debug, thiserror::Error)]
 pub enum YtError {
@@ -73,6 +73,123 @@ pub async fn search(bin: &str, query: &str, limit: u32) -> Result<Vec<Track>, Yt
     cmd.args(["--flat-playlist", "-J", "--no-warnings"])
         .arg(format!("ytsearch{limit}:{query}"));
     parse_tracks(&run(cmd).await?)
+}
+
+pub async fn search_channels(bin: &str, query: &str, limit: u32) -> Result<Vec<Channel>, YtError> {
+    let url = reqwest::Url::parse_with_params(
+        "https://www.youtube.com/results",
+        [("search_query", query), ("sp", "EgIQAg==")],
+    )
+    .map_err(|e| YtError::Failed(e.to_string()))?;
+    let mut cmd = command(bin);
+    cmd.args(["--flat-playlist", "-J", "--no-warnings", "--playlist-end"])
+        .arg(limit.to_string())
+        .arg(url.as_str());
+    parse_channels(&run(cmd).await?)
+}
+
+pub async fn channel_videos(
+    bin: &str,
+    channel_id: &str,
+    start: u32,
+    end: u32,
+) -> Result<ChannelPage, YtError> {
+    let mut cmd = command(bin);
+    cmd.args(["--flat-playlist", "-J", "--no-warnings"])
+        .arg("--playlist-start")
+        .arg(start.to_string())
+        .arg("--playlist-end")
+        .arg(end.to_string())
+        .arg(format!(
+            "https://www.youtube.com/channel/{channel_id}/videos"
+        ));
+    parse_channel_page(&run(cmd).await?)
+}
+
+pub struct ChannelPage {
+    pub name: String,
+    pub avatar_url: String,
+    pub tracks: Vec<Track>,
+}
+
+fn is_channel_id(id: &str) -> bool {
+    id.len() == 24 && id.starts_with("UC")
+}
+
+fn avatar_of(v: &Value) -> String {
+    let Some(list) = v.get("thumbnails").and_then(Value::as_array) else {
+        return String::new();
+    };
+    let url = |t: &Value| t.get("url").and_then(Value::as_str).map(str::to_string);
+    let square = list.iter().find(|t| {
+        let side = |k: &str| t.get(k).and_then(Value::as_u64);
+        side("width").is_some() && side("width") == side("height")
+    });
+    let named = list.iter().find(|t| {
+        t.get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id.contains("avatar"))
+    });
+    let found = square
+        .and_then(url)
+        .or_else(|| named.and_then(url))
+        .or_else(|| list.last().and_then(url));
+    match found {
+        Some(u) if u.starts_with("//") => format!("https:{u}"),
+        Some(u) => u,
+        None => String::new(),
+    }
+}
+
+pub fn parse_channels(json: &str) -> Result<Vec<Channel>, YtError> {
+    let root: Value = serde_json::from_str(json).map_err(|e| YtError::Parse(e.to_string()))?;
+    let text = |v: &Value, key: &str| v.get(key).and_then(Value::as_str).map(str::to_string);
+    let entries = root
+        .get("entries")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    Ok(entries
+        .iter()
+        .filter_map(|e| {
+            let id = text(e, "channel_id")
+                .filter(|i| is_channel_id(i))
+                .or_else(|| text(e, "id").filter(|i| is_channel_id(i)))?;
+            if !seen.insert(id.clone()) {
+                return None;
+            }
+            Some(Channel {
+                name: text(e, "channel")
+                    .or_else(|| text(e, "title"))
+                    .or_else(|| text(e, "uploader"))
+                    .unwrap_or_else(|| id.clone()),
+                avatar_url: avatar_of(e),
+                id,
+            })
+        })
+        .collect())
+}
+
+pub fn parse_channel_page(json: &str) -> Result<ChannelPage, YtError> {
+    let root: Value = serde_json::from_str(json).map_err(|e| YtError::Parse(e.to_string()))?;
+    let name = ["channel", "uploader", "title"]
+        .iter()
+        .find_map(|k| root.get(*k).and_then(Value::as_str))
+        .unwrap_or_default()
+        .trim_end_matches(" - Videos")
+        .to_string();
+    let mut tracks = parse_tracks(json)?;
+    for t in &mut tracks {
+        if t.channel.is_empty() {
+            t.channel = name.clone();
+        }
+    }
+    Ok(ChannelPage {
+        name,
+        avatar_url: avatar_of(&root),
+        tracks,
+    })
 }
 
 /// A pasted video or playlist link.
@@ -139,6 +256,12 @@ fn track_from_value(v: &Value) -> Option<Track> {
             .get("duration")
             .and_then(Value::as_f64)
             .map(|d| d.max(0.0) as u64),
+        upload_day: text("upload_date")
+            .and_then(|d| crate::model::parse_upload_day(&d))
+            .or_else(|| {
+                let ts = v.get("timestamp").and_then(Value::as_i64)?;
+                Some(ts.div_euclid(86_400))
+            }),
     })
 }
 
@@ -376,6 +499,28 @@ mod tests {
         assert_eq!(t[0].duration_secs, Some(213));
         assert_eq!(t[1].channel, "officialpsy");
         assert_eq!(t[1].duration_secs, None);
+    }
+
+    #[test]
+    fn parses_channel_search_results() {
+        let json = r#"{"entries":[
+            {"id":"UCuAXFkgsw1L7xaCfnd5JJOw","title":"Rick Astley","thumbnails":[{"url":"//yt3.ggpht.com/a"}]},
+            {"id":"UCuAXFkgsw1L7xaCfnd5JJOw","title":"dup"},
+            {"id":"dQw4w9WgXcQ","title":"a video"}
+        ]}"#;
+        let c = parse_channels(json).unwrap();
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].name, "Rick Astley");
+        assert_eq!(c[0].avatar_url, "https://yt3.ggpht.com/a");
+    }
+
+    #[test]
+    fn channel_page_fills_in_the_channel_name() {
+        let json = r#"{"channel":"Rick","thumbnails":[{"id":"0","url":"b"},{"id":"avatar_uncropped","url":"a"}],
+            "entries":[{"id":"dQw4w9WgXcQ","title":"x"}]}"#;
+        let p = parse_channel_page(json).unwrap();
+        assert_eq!(p.avatar_url, "a");
+        assert_eq!(p.tracks[0].channel, "Rick");
     }
 
     #[test]

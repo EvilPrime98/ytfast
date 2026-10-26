@@ -13,6 +13,8 @@ use crate::runtime;
 use crate::state::Stores;
 use crate::ui::app_loader::app_loader;
 use crate::ui::confirm::{self, ConfirmHost};
+use crate::ui::pages::channel::ChannelPage;
+use crate::ui::pages::channels::ChannelsPage;
 use crate::ui::pages::history::HistoryPage;
 use crate::ui::pages::home::HomePage;
 use crate::ui::pages::library::LibraryPage;
@@ -60,6 +62,8 @@ enum Page {
     NowPlaying(Entity<NowPlayingPage>),
     Library(Entity<LibraryPage>),
     History(Entity<HistoryPage>),
+    Channels(Entity<ChannelsPage>),
+    Channel(Entity<ChannelPage>),
     Settings(Entity<SettingsPage>),
 }
 
@@ -196,7 +200,25 @@ impl AppRoot {
                 Page::Home(page)
             }
             Route::Search => {
-                Page::Search(cx.new(|cx| SearchPage::new(self.stores.clone(), window, cx)))
+                let page = cx.new(|cx| SearchPage::new(self.stores.clone(), window, cx));
+                self._page_subs.push(cx.subscribe_in(
+                    &page,
+                    window,
+                    |this, _, ev: &Navigate, window, cx| this.navigate(ev.0.clone(), window, cx),
+                ));
+                Page::Search(page)
+            }
+            Route::Channels => {
+                let page = cx.new(|cx| ChannelsPage::new(self.stores.clone(), cx));
+                self._page_subs.push(cx.subscribe_in(
+                    &page,
+                    window,
+                    |this, _, ev: &Navigate, window, cx| this.navigate(ev.0.clone(), window, cx),
+                ));
+                Page::Channels(page)
+            }
+            Route::Channel(channel) => {
+                Page::Channel(cx.new(|cx| ChannelPage::new(self.stores.clone(), channel, cx)))
             }
             Route::NowPlaying => {
                 let page = cx.new(|cx| NowPlayingPage::new(self.stores.clone(), cx));
@@ -243,6 +265,8 @@ impl Render for AppRoot {
             Page::NowPlaying(page) => AnyView::from(page.clone()),
             Page::Library(page) => AnyView::from(page.clone()),
             Page::History(page) => AnyView::from(page.clone()),
+            Page::Channels(page) => AnyView::from(page.clone()),
+            Page::Channel(page) => AnyView::from(page.clone()),
             Page::Settings(page) => AnyView::from(page.clone()),
         };
 
@@ -303,6 +327,7 @@ fn dev_route() -> Option<Route> {
         "now-playing" => Route::NowPlaying,
         "library" => Route::Library,
         "history" => Route::History,
+        "channels" => Route::Channels,
         "settings" => Route::Settings,
         _ => return None,
     })

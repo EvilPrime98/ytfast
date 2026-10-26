@@ -8698,6 +8698,7 @@ dependencies = [
  "gpui-ce",
  "gpui_ce_platform",
  "image",
+ "notify-rust",
  "open",
  "reqwest",
  "rfd",
