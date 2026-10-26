@@ -61,9 +61,11 @@ pub fn video_card(
                 .child(thumbnail(thumb, inner, inner * 9.0 / 16.0))
                 .child(
                     div()
+                        .text_ellipsis()
                         .line_clamp(2)
                         .h(px(36.0))
                         .text_size(px(14.0))
+                        .line_height(px(18.0))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(title_color)
                         .child(track.title.clone()),
