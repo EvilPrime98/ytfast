@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct Prefs {
     /// Output volume, 0.0..=1.0.
     pub volume: f32,
+    pub speed: f32,
     /// Path of the `yt-dlp` binary; empty means "find it on PATH".
     pub ytdlp_path: String,
     /// Play the next queued track when one ends.
@@ -26,6 +27,7 @@ impl Default for Prefs {
     fn default() -> Self {
         Self {
             volume: 0.8,
+            speed: 1.0,
             ytdlp_path: String::new(),
             autoplay_next: true,
             search_limit: 15,

@@ -22,6 +22,8 @@ pub enum PlayState {
     Paused,
 }
 
+pub const SPEEDS: [f32; 7] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
 /// A track within this long of its start restarts on "previous"; later it goes to the one before.
 const RESTART_THRESHOLD: Duration = Duration::from_secs(3);
 
@@ -33,6 +35,7 @@ pub struct PlayerStore {
     pub position: Duration,
     pub duration: Option<Duration>,
     pub volume: f32,
+    pub speed: f32,
     /// Bumped when the queue or the current track change, so views can memoize.
     pub revision: u64,
     prefs: Entity<PrefsStore>,
@@ -49,6 +52,11 @@ impl PlayerStore {
         cx: &mut Context<Self>,
     ) -> Self {
         let volume = prefs.read(cx).prefs.volume;
+        let speed = prefs
+            .read(cx)
+            .prefs
+            .speed
+            .clamp(SPEEDS[0], SPEEDS[SPEEDS.len() - 1]);
         let store = Self {
             queue: Vec::new(),
             index: None,
@@ -56,6 +64,7 @@ impl PlayerStore {
             position: Duration::ZERO,
             duration: None,
             volume,
+            speed,
             revision: 0,
             prefs,
             history,
@@ -157,7 +166,7 @@ impl PlayerStore {
                     }
                     let error = match result {
                         Ok(path) => {
-                            s.engine.load(path, s.volume);
+                            s.engine.load(path, s.volume, s.speed);
                             s.state = PlayState::Playing;
                             None
                         }
@@ -233,6 +242,18 @@ impl PlayerStore {
         let v = self.volume;
         self.prefs
             .update(cx, |p, cx| p.update(cx, |p| p.volume = v));
+        cx.notify();
+    }
+
+    pub fn cycle_speed(&mut self, cx: &mut Context<Self>) {
+        self.speed = SPEEDS
+            .iter()
+            .copied()
+            .find(|s| *s > self.speed + 0.001)
+            .unwrap_or(SPEEDS[0]);
+        self.engine.set_speed(self.speed);
+        let s = self.speed;
+        self.prefs.update(cx, |p, cx| p.update(cx, |p| p.speed = s));
         cx.notify();
     }
 
