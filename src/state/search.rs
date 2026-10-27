@@ -18,7 +18,6 @@ pub enum SearchMode {
 pub struct SearchStore {
     pub mode: SearchMode,
     pub channels: Vec<Channel>,
-    pub channels_searched: bool,
     pub query: String,
     pub results: Vec<Track>,
     pub loading: bool,
@@ -27,6 +26,7 @@ pub struct SearchStore {
     /// Bumped whenever `results` change.
     pub revision: u64,
     generation: u64,
+    pending: u8,
 }
 
 impl SearchStore {
@@ -37,58 +37,6 @@ impl SearchStore {
         }
     }
 
-    pub fn run_channels(
-        &mut self,
-        query: String,
-        bin: String,
-        limit: u32,
-        cx: &mut Context<Self>,
-    ) -> Task<()> {
-        let query = query.trim().to_string();
-        if query.is_empty() {
-            return Task::ready(());
-        }
-        self.generation += 1;
-        let generation = self.generation;
-        self.query = query.clone();
-        self.loading = true;
-        self.channels_searched = true;
-        cx.notify();
-
-        let limit = limit.max(1);
-        cx.spawn(async move |this, cx| {
-            let result =
-                runtime::run(async move { ytdlp::search_channels(&bin, &query, limit).await })
-                    .await;
-            let error = this
-                .update(cx, |s, cx| {
-                    if generation != s.generation {
-                        return None;
-                    }
-                    s.loading = false;
-                    let error = match result {
-                        Ok(channels) => {
-                            s.channels = channels;
-                            None
-                        }
-                        Err(e) => {
-                            s.channels.clear();
-                            Some(e.to_string())
-                        }
-                    };
-                    cx.notify();
-                    error
-                })
-                .ok()
-                .flatten();
-            if let Some(e) = error {
-                tracing::warn!("channel search failed: {e}");
-                cx.update(|cx| toast::error(cx, e));
-            }
-        })
-    }
-
-    /// A pasted link is resolved (video or playlist); anything else is a search query.
     pub fn run(
         &mut self,
         query: String,
@@ -103,47 +51,90 @@ impl SearchStore {
         self.generation += 1;
         let generation = self.generation;
         self.query = query.clone();
-        self.loading = true;
         self.searched = true;
+        self.results.clear();
+        self.channels.clear();
+        self.revision += 1;
+        let is_link = looks_like_url(&query);
+        self.pending = if is_link { 1 } else { 2 };
+        self.loading = true;
         cx.notify();
 
         let limit = limit.max(1);
-        cx.spawn(async move |this, cx| {
-            let result = runtime::run(async move {
-                if looks_like_url(&query) {
-                    ytdlp::resolve(&bin, &query).await
-                } else {
-                    ytdlp::search(&bin, &query, limit).await
+        let videos = {
+            let (bin, query) = (bin.clone(), query.clone());
+            cx.spawn(async move |this, cx| {
+                let result = runtime::run(async move {
+                    if is_link {
+                        ytdlp::resolve(&bin, &query).await
+                    } else {
+                        ytdlp::search(&bin, &query, limit).await
+                    }
+                })
+                .await;
+                let error = this
+                    .update(cx, |s, cx| {
+                        if generation != s.generation {
+                            return None;
+                        }
+                        let error = match result {
+                            Ok(tracks) => {
+                                s.results = tracks;
+                                None
+                            }
+                            Err(e) => Some(e.to_string()),
+                        };
+                        s.revision += 1;
+                        s.finish_one();
+                        cx.notify();
+                        error
+                    })
+                    .ok()
+                    .flatten();
+                if let Some(e) = error {
+                    tracing::warn!("search failed: {e}");
+                    cx.update(|cx| toast::error(cx, e));
                 }
             })
-            .await;
+        };
+        if is_link {
+            return videos;
+        }
+        let channels = cx.spawn(async move |this, cx| {
+            let result =
+                runtime::run(async move { ytdlp::search_channels(&bin, &query, limit).await })
+                    .await;
             let error = this
                 .update(cx, |s, cx| {
                     if generation != s.generation {
                         return None;
                     }
-                    s.loading = false;
                     let error = match result {
-                        Ok(tracks) => {
-                            s.results = tracks;
-                            s.revision += 1;
+                        Ok(channels) => {
+                            s.channels = channels;
                             None
                         }
-                        Err(e) => {
-                            s.results.clear();
-                            s.revision += 1;
-                            Some(e.to_string())
-                        }
+                        Err(e) => Some(e.to_string()),
                     };
+                    s.finish_one();
                     cx.notify();
                     error
                 })
                 .ok()
                 .flatten();
             if let Some(e) = error {
-                tracing::warn!("search failed: {e}");
+                tracing::warn!("channel search failed: {e}");
                 cx.update(|cx| toast::error(cx, e));
             }
+        });
+        cx.spawn(async move |_, _| {
+            videos.await;
+            channels.await;
         })
+    }
+
+    fn finish_one(&mut self) {
+        self.pending = self.pending.saturating_sub(1);
+        self.loading = self.pending > 0;
     }
 }

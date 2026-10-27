@@ -1,17 +1,19 @@
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement,
-    Styled, Subscription, Window, div, prelude::*, px,
+    Context, InteractiveElement, IntoElement, ParentElement, Render, ScrollWheelEvent,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::state::Stores;
 use crate::state::history::{now_secs, relative_time};
 use crate::ui::components::button::{ButtonVariant, button};
+use crate::ui::components::smooth_scroll::SmoothScroll;
 use crate::ui::components::track_row::{RowAction, track_row};
 use crate::ui::icons::{Icon, icon};
 use crate::ui::{theme, toast};
 
 pub struct HistoryPage {
     stores: Stores,
+    scroll: SmoothScroll,
     _subs: Vec<Subscription>,
 }
 
@@ -27,10 +29,18 @@ impl HistoryPage {
         ];
         let page = Self {
             stores,
+            scroll: SmoothScroll::new(),
             _subs: subs,
         };
         page.ensure_thumbs(cx);
         page
+    }
+
+    fn on_wheel(&mut self, ev: &ScrollWheelEvent, cx: &mut Context<Self>) {
+        if self.scroll.on_wheel(ev) {
+            cx.stop_propagation();
+            cx.notify();
+        }
     }
 
     fn ensure_thumbs(&self, cx: &mut Context<Self>) {
@@ -51,7 +61,8 @@ impl HistoryPage {
 }
 
 impl Render for HistoryPage {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.scroll.step(window);
         let entries = self.stores.history.read(cx).entries.clone();
         let tracks: Vec<_> = entries.iter().map(|e| e.track.clone()).collect();
         let playing_id = self.stores.player.read(cx).current().map(|t| t.id.clone());
@@ -161,6 +172,8 @@ impl Render for HistoryPage {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
+                    .track_scroll(&self.scroll.handle)
+                    .on_scroll_wheel(cx.listener(|this, ev, _, cx| this.on_wheel(ev, cx)))
                     .gap(px(2.0))
                     .children(rows)
                     .into_any_element()
