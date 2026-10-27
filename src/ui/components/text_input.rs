@@ -387,7 +387,11 @@ impl Element for InputText {
         };
 
         let line = if input.value.is_empty() {
-            shape(input.placeholder.clone(), gpui::rgb_to_hsla(gpui::rgb(0x8a8a8a)), window)
+            shape(
+                input.placeholder.clone(),
+                gpui::rgb_to_hsla(gpui::rgb(0x8a8a8a)),
+                window,
+            )
         } else {
             shape(input.value.clone().into(), style.color, window)
         };
