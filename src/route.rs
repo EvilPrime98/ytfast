@@ -1,6 +1,13 @@
 //! Routing. GPUI has no router: an `enum Route` plus a back/forward stack.
 
-use crate::model::Channel;
+use crate::model::{Channel, Playlist};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ChannelTab {
+    #[default]
+    Videos,
+    Playlists,
+}
 
 /// App pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,7 +23,8 @@ pub enum Route {
     History,
     Channels,
     Subscriptions,
-    Channel(Channel),
+    Channel(Channel, ChannelTab),
+    Playlist(Playlist),
     Settings,
 }
 
@@ -35,7 +43,8 @@ impl Route {
             Self::History => "History",
             Self::Channels => "Channels",
             Self::Subscriptions => "My Feed",
-            Self::Channel(_) => "Channel",
+            Self::Channel(..) => "Channel",
+            Self::Playlist(_) => "Playlist",
             Self::Settings => "Settings",
         }
     }
@@ -76,6 +85,10 @@ impl History {
         self.index += 1;
     }
 
+    pub fn replace(&mut self, route: Route) {
+        self.stack[self.index] = route;
+    }
+
     pub fn can_back(&self) -> bool {
         self.index > 0
     }
@@ -111,6 +124,8 @@ impl History {
 /// Emitted by pages and the sidebar; `AppRoot` subscribes and pushes the route.
 pub struct Navigate(pub Route);
 
+pub struct ReplaceRoute(pub Route);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,6 +151,19 @@ mod tests {
         h.push(Route::NowPlaying);
         assert!(!h.can_forward());
         assert_eq!(h.current(), &Route::NowPlaying);
+        h.back();
+        assert_eq!(h.current(), &Route::home());
+    }
+
+    #[test]
+    fn replace_keeps_the_stack_and_a_tab_change_is_not_a_noop() {
+        let channel = Channel::default();
+        let mut h = History::default();
+        h.push(Route::Channel(channel.clone(), ChannelTab::Videos));
+        h.replace(Route::Channel(channel.clone(), ChannelTab::Playlists));
+        h.push(Route::Playlist(Playlist::default()));
+        h.back();
+        assert_eq!(h.current(), &Route::Channel(channel, ChannelTab::Playlists));
         h.back();
         assert_eq!(h.current(), &Route::home());
     }

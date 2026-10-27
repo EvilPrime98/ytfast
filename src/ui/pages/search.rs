@@ -6,7 +6,7 @@ use gpui::{
     px,
 };
 
-use crate::route::{Navigate, Route};
+use crate::route::{ChannelTab, Navigate, Route};
 use crate::state::Stores;
 use crate::state::search::SearchMode;
 use crate::ui::components::button::{ButtonVariant, button};
@@ -137,7 +137,10 @@ impl SearchPage {
                             .gap(px(12.0))
                             .cursor_pointer()
                             .on_click(cx.listener(move |_, _, _, cx| {
-                                cx.emit(Navigate(Route::Channel(open.clone())))
+                                cx.emit(Navigate(Route::Channel(
+                                    open.clone(),
+                                    ChannelTab::default(),
+                                )))
                             }))
                             .child(avatar(image, 44.0))
                             .child(

@@ -22,6 +22,13 @@ pub struct Channel {
     pub avatar_url: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Playlist {
+    pub id: String,
+    pub title: String,
+    pub thumb_id: String,
+}
+
 /// `3:07`, `1:02:09`; `--:--` when unknown.
 pub fn format_duration(secs: Option<u64>) -> String {
     let Some(s) = secs else {
