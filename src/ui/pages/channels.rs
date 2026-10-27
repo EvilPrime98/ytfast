@@ -3,7 +3,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*, px,
 };
 
-use crate::route::{Navigate, Route};
+use crate::route::{ChannelTab, Navigate, Route};
 use crate::state::Stores;
 use crate::ui::components::button::{ButtonVariant, button};
 use crate::ui::components::track_row::RowAction;
@@ -166,7 +166,10 @@ impl Render for ChannelsPage {
                             .w_full()
                             .cursor_pointer()
                             .on_click(cx.listener(move |_, _, _, cx| {
-                                cx.emit(Navigate(Route::Channel(open.clone())))
+                                cx.emit(Navigate(Route::Channel(
+                                    open.clone(),
+                                    ChannelTab::default(),
+                                )))
                             }))
                             .child(avatar(image, 88.0))
                             .child(

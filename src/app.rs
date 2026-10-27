@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use crate::api::ytdlp;
-use crate::route::{History, Navigate, Route, window_title};
+use crate::route::{History, Navigate, ReplaceRoute, Route, window_title};
 use crate::runtime;
 use crate::state::Stores;
 use crate::ui::app_loader::app_loader;
@@ -19,6 +19,7 @@ use crate::ui::pages::history::HistoryPage;
 use crate::ui::pages::home::HomePage;
 use crate::ui::pages::library::LibraryPage;
 use crate::ui::pages::now_playing::NowPlayingPage;
+use crate::ui::pages::playlist::PlaylistPage;
 use crate::ui::pages::search::SearchPage;
 use crate::ui::pages::settings::SettingsPage;
 use crate::ui::pages::subscriptions::SubscriptionsPage;
@@ -66,6 +67,7 @@ enum Page {
     Channels(Entity<ChannelsPage>),
     Subscriptions(Entity<SubscriptionsPage>),
     Channel(Entity<ChannelPage>),
+    Playlist(Entity<PlaylistPage>),
     Settings(Entity<SettingsPage>),
 }
 
@@ -228,8 +230,22 @@ impl AppRoot {
                 ));
                 Page::Subscriptions(page)
             }
-            Route::Channel(channel) => {
-                Page::Channel(cx.new(|cx| ChannelPage::new(self.stores.clone(), channel, cx)))
+            Route::Channel(channel, tab) => {
+                let page = cx.new(|cx| ChannelPage::new(self.stores.clone(), channel, tab, cx));
+                self._page_subs.push(cx.subscribe_in(
+                    &page,
+                    window,
+                    |this, _, ev: &Navigate, window, cx| this.navigate(ev.0.clone(), window, cx),
+                ));
+                self._page_subs
+                    .push(cx.subscribe(&page, |this, _, ev: &ReplaceRoute, cx| {
+                        this.history.replace(ev.0.clone());
+                        cx.notify();
+                    }));
+                Page::Channel(page)
+            }
+            Route::Playlist(playlist) => {
+                Page::Playlist(cx.new(|cx| PlaylistPage::new(self.stores.clone(), playlist, cx)))
             }
             Route::NowPlaying => {
                 let page = cx.new(|cx| NowPlayingPage::new(self.stores.clone(), cx));
@@ -279,6 +295,7 @@ impl Render for AppRoot {
             Page::Channels(page) => AnyView::from(page.clone()),
             Page::Subscriptions(page) => AnyView::from(page.clone()),
             Page::Channel(page) => AnyView::from(page.clone()),
+            Page::Playlist(page) => AnyView::from(page.clone()),
             Page::Settings(page) => AnyView::from(page.clone()),
         };
 

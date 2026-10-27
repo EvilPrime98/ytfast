@@ -14,7 +14,7 @@ use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::oneshot;
 
 use crate::audio::Growth;
-use crate::model::{Channel, Track};
+use crate::model::{Channel, Playlist, Track};
 
 #[derive(Debug, thiserror::Error)]
 pub enum YtError {
@@ -88,27 +88,56 @@ pub async fn search_channels(bin: &str, query: &str, limit: u32) -> Result<Vec<C
     parse_channels(&run(cmd).await?)
 }
 
-pub async fn channel_videos(
-    bin: &str,
-    channel_id: &str,
-    start: u32,
-    end: u32,
-) -> Result<ChannelPage, YtError> {
+fn flat_range(bin: &str, url: &str, start: u32, end: u32) -> Command {
     let mut cmd = command(bin);
     cmd.args(["--flat-playlist", "-J", "--no-warnings"])
         .arg("--playlist-start")
         .arg(start.to_string())
         .arg("--playlist-end")
         .arg(end.to_string())
-        .arg(format!(
-            "https://www.youtube.com/channel/{channel_id}/videos"
-        ));
-    parse_channel_page(&run(cmd).await?)
+        .arg(url);
+    cmd
+}
+
+pub async fn channel_videos(
+    bin: &str,
+    channel_id: &str,
+    start: u32,
+    end: u32,
+) -> Result<ChannelPage, YtError> {
+    let url = format!("https://www.youtube.com/channel/{channel_id}/videos");
+    parse_channel_page(&run(flat_range(bin, &url, start, end)).await?)
+}
+
+pub async fn channel_playlists(
+    bin: &str,
+    channel_id: &str,
+    start: u32,
+    end: u32,
+) -> Result<Vec<Playlist>, YtError> {
+    let url = format!("https://www.youtube.com/channel/{channel_id}/playlists");
+    parse_playlists(&run(flat_range(bin, &url, start, end)).await?)
+}
+
+pub async fn playlist_videos(
+    bin: &str,
+    playlist_id: &str,
+    start: u32,
+    end: u32,
+) -> Result<PlaylistPage, YtError> {
+    let url = format!("https://www.youtube.com/playlist?list={playlist_id}");
+    parse_playlist_page(&run(flat_range(bin, &url, start, end)).await?)
 }
 
 pub struct ChannelPage {
     pub name: String,
     pub avatar_url: String,
+    pub tracks: Vec<Track>,
+}
+
+pub struct PlaylistPage {
+    pub title: String,
+    pub owner: String,
     pub tracks: Vec<Track>,
 }
 
@@ -189,6 +218,50 @@ pub fn parse_channel_page(json: &str) -> Result<ChannelPage, YtError> {
         name,
         avatar_url: avatar_of(&root),
         tracks,
+    })
+}
+
+fn video_id_of_thumbnail(url: &str) -> Option<&str> {
+    let id = url.split("/vi/").nth(1)?.split('/').next()?;
+    (id.len() == 11).then_some(id)
+}
+
+pub fn parse_playlists(json: &str) -> Result<Vec<Playlist>, YtError> {
+    let root: Value = serde_json::from_str(json).map_err(|e| YtError::Parse(e.to_string()))?;
+    let entries = root
+        .get("entries")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    Ok(entries
+        .iter()
+        .filter_map(|e| {
+            let text = |key: &str| e.get(key).and_then(Value::as_str);
+            let id = text("id").filter(|id| !is_channel_id(id) && id.len() != 11)?;
+            let thumb_id = e
+                .get("thumbnails")
+                .and_then(Value::as_array)
+                .and_then(|list| list.iter().find_map(|t| t.get("url")?.as_str()))
+                .and_then(video_id_of_thumbnail)
+                .unwrap_or_default();
+            Some(Playlist {
+                id: id.to_string(),
+                title: text("title").unwrap_or("Untitled").to_string(),
+                thumb_id: thumb_id.to_string(),
+            })
+        })
+        .collect())
+}
+
+pub fn parse_playlist_page(json: &str) -> Result<PlaylistPage, YtError> {
+    let root: Value = serde_json::from_str(json).map_err(|e| YtError::Parse(e.to_string()))?;
+    let text = |key: &str| root.get(key).and_then(Value::as_str).map(str::to_string);
+    Ok(PlaylistPage {
+        title: text("title").unwrap_or_default(),
+        owner: text("channel")
+            .or_else(|| text("uploader"))
+            .unwrap_or_default(),
+        tracks: parse_tracks(json)?,
     })
 }
 
@@ -521,6 +594,29 @@ mod tests {
         let p = parse_channel_page(json).unwrap();
         assert_eq!(p.avatar_url, "a");
         assert_eq!(p.tracks[0].channel, "Rick");
+    }
+
+    #[test]
+    fn parses_channel_playlists() {
+        let json = r#"{"entries":[
+            {"id":"PLlaN88a7y2_qHDbY9eQbuNTAuEJUSEeuu","title":"Live at The O2",
+             "thumbnails":[{"url":"https://i.ytimg.com/vi/PXC_PYeB6F8/hqdefault.jpg?sqp=x"}]},
+            {"id":"PLbare","title":"No thumbnail"},
+            {"id":"dQw4w9WgXcQ","title":"a video"}
+        ]}"#;
+        let p = parse_playlists(json).unwrap();
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].thumb_id, "PXC_PYeB6F8");
+        assert_eq!(p[1].thumb_id, "");
+    }
+
+    #[test]
+    fn playlist_page_has_title_owner_and_videos() {
+        let json = r#"{"title":"Mix","channel":"Rick",
+            "entries":[{"id":"dQw4w9WgXcQ","title":"x"}]}"#;
+        let p = parse_playlist_page(json).unwrap();
+        assert_eq!((p.title.as_str(), p.owner.as_str()), ("Mix", "Rick"));
+        assert_eq!(p.tracks.len(), 1);
     }
 
     #[test]
