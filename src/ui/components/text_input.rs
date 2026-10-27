@@ -1,15 +1,23 @@
 //! Single-line text field. GPUI core has no text input, so this handles typing,
-//! caret movement, selection (shift+arrows, select all, drag-free), copy/cut/paste, backspace/delete
-//! and Enter/Escape.
-//! Known gaps: no IME composition, no mouse-drag selection, caret is char-based (not grapheme-based).
+//! caret movement (arrows, Ctrl+arrows for words, Home/End), selection (shift+arrows,
+//! select all, mouse click and drag), copy/cut/paste, backspace/delete and Enter/Escape.
+//! The text is shaped as one line by a custom element, which gives pixel-accurate hit-testing,
+//! a blinking caret and horizontal scrolling that keeps the caret in view.
+//! Known gaps: no IME composition, caret is char-based (not grapheme-based).
+
+use std::time::Duration;
 
 use gpui::{
-    App, ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, ParentElement, Render, SharedString, Styled, Window,
-    div, prelude::*, px,
+    App, Bounds, ClipboardItem, Context, DispatchPhase, Element, ElementId, Entity, EventEmitter,
+    FocusHandle, Focusable, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
+    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
+    ParentElement, Pixels, Point, Render, ShapedLine, SharedString, Styled, Task, TextRun, Window,
+    div, fill, point, px, relative, size,
 };
 
 use crate::ui::theme;
+
+const BLINK_INTERVAL: Duration = Duration::from_millis(530);
 
 pub enum TextInputEvent {
     Changed,
@@ -25,6 +33,12 @@ pub struct TextInput {
     anchor: Option<usize>,
     placeholder: SharedString,
     focus: FocusHandle,
+    scroll_x: Pixels,
+    line: Option<ShapedLine>,
+    bounds: Bounds<Pixels>,
+    dragging: bool,
+    blink_on: bool,
+    blink_task: Option<Task<()>>,
 }
 
 impl EventEmitter<TextInputEvent> for TextInput {}
@@ -37,6 +51,12 @@ impl TextInput {
             anchor: None,
             placeholder: placeholder.into(),
             focus: cx.focus_handle(),
+            scroll_x: px(0.0),
+            line: None,
+            bounds: Bounds::default(),
+            dragging: false,
+            blink_on: true,
+            blink_task: None,
         }
     }
 
@@ -108,6 +128,59 @@ impl TextInput {
         self.caret = to;
     }
 
+    fn reset_blink(&mut self, cx: &mut Context<Self>) {
+        self.blink_on = true;
+        self.blink_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(BLINK_INTERVAL).await;
+                let alive = this.update(cx, |this, cx| {
+                    this.blink_on = !this.blink_on;
+                    cx.notify();
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        }));
+    }
+
+    fn char_at(&self, position: Point<Pixels>) -> usize {
+        let Some(line) = &self.line else {
+            return self.len();
+        };
+        let x = position.x - self.bounds.left() + self.scroll_x;
+        let byte = line.closest_index_for_x(x).min(self.value.len());
+        if self.value.is_char_boundary(byte) {
+            self.value[..byte].chars().count()
+        } else {
+            self.len()
+        }
+    }
+
+    fn prev_word(&self, from: usize) -> usize {
+        let chars: Vec<char> = self.value.chars().collect();
+        let mut i = from.min(chars.len());
+        while i > 0 && chars[i - 1].is_whitespace() {
+            i -= 1;
+        }
+        while i > 0 && !chars[i - 1].is_whitespace() {
+            i -= 1;
+        }
+        i
+    }
+
+    fn next_word(&self, from: usize) -> usize {
+        let chars: Vec<char> = self.value.chars().collect();
+        let mut i = from.min(chars.len());
+        while i < chars.len() && !chars[i].is_whitespace() {
+            i += 1;
+        }
+        while i < chars.len() && chars[i].is_whitespace() {
+            i += 1;
+        }
+        i
+    }
+
     fn on_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let ks = &event.keystroke;
         let len = self.len();
@@ -140,6 +213,8 @@ impl TextInput {
                 }
                 cx.emit(TextInputEvent::Changed);
             }
+            "left" if command => self.move_caret(self.prev_word(self.caret), shift),
+            "right" if command => self.move_caret(self.next_word(self.caret), shift),
             "left" => match self.selection() {
                 Some((from, _)) if !shift => {
                     self.anchor = None;
@@ -183,6 +258,7 @@ impl TextInput {
                 None => return,
             },
         }
+        self.reset_blink(cx);
         cx.stop_propagation();
         cx.notify();
     }
@@ -196,51 +272,13 @@ impl Focusable for TextInput {
 
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let focused = self.focus.is_focused(window);
-        let caret = div().w(px(1.0)).h(px(15.0)).bg(if focused {
-            theme::accent()
-        } else {
-            gpui::rgba(0x00000000)
-        });
-
-        let content = if self.value.is_empty() {
-            div().flex().items_center().child(caret).child(
-                div()
-                    .text_color(gpui::rgb(0x8a8a8a))
-                    .child(self.placeholder.clone()),
-            )
-        } else if let Some((from, to)) = self.selection() {
-            let (b_from, b_to) = (self.byte_index(from), self.byte_index(to));
-            let selected = div()
-                .bg(theme::accent_soft())
-                .child(self.value[b_from..b_to].to_string());
-            // The caret sits at whichever end of the selection it was moved to.
-            let (before, after) = (
-                self.value[..b_from].to_string(),
-                self.value[b_to..].to_string(),
-            );
-            let at_start = self.caret == from;
-            div()
-                .flex()
-                .items_center()
-                .child(div().child(before))
-                .when(at_start, |s| {
-                    s.child(div().w(px(1.0)).h(px(15.0)).bg(theme::accent()))
-                })
-                .child(selected)
-                .when(!at_start, |s| {
-                    s.child(div().w(px(1.0)).h(px(15.0)).bg(theme::accent()))
-                })
-                .child(div().child(after))
-        } else {
-            let (before, after) = self.value.split_at(self.byte_index(self.caret));
-            div()
-                .flex()
-                .items_center()
-                .child(div().child(before.to_string()))
-                .child(caret)
-                .child(div().child(after.to_string()))
-        };
+        if self.focus.is_focused(window) {
+            if self.blink_task.is_none() {
+                self.reset_blink(cx);
+            }
+        } else if self.blink_task.take().is_some() {
+            self.blink_on = true;
+        }
 
         div()
             .id("text-input")
@@ -249,12 +287,14 @@ impl Render for TextInput {
             .on_key_down(cx.listener(|this, e, window, cx| this.on_key(e, window, cx)))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, _, window, cx| {
+                cx.listener(|this, e: &MouseDownEvent, window, cx| {
                     // Keep the root from taking the focus back.
                     cx.stop_propagation();
                     window.focus(&this.focus, cx);
-                    this.anchor = None;
-                    this.caret = this.len();
+                    this.caret = this.char_at(e.position);
+                    this.anchor = Some(this.caret);
+                    this.dragging = true;
+                    this.reset_blink(cx);
                     cx.notify();
                 }),
             )
@@ -267,6 +307,191 @@ impl Render for TextInput {
             .text_size(px(13.0))
             .text_color(theme::text())
             .cursor_text()
-            .child(content)
+            .child(InputText { input: cx.entity() })
+    }
+}
+
+struct InputText {
+    input: Entity<TextInput>,
+}
+
+struct InputTextPrepaint {
+    line: ShapedLine,
+    scroll_x: Pixels,
+    selection: Option<PaintQuad>,
+    caret: Option<PaintQuad>,
+}
+
+impl IntoElement for InputText {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for InputText {
+    type RequestLayoutState = ();
+    type PrepaintState = InputTextPrepaint;
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let mut style = gpui::Style::default();
+        style.size.width = relative(1.0).into();
+        style.size.height = window.line_height().into();
+        (window.request_layout(style, [], cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self::PrepaintState {
+        let style = window.text_style();
+        let font_size = style.font_size.to_pixels(window.rem_size());
+        let line_height = window.line_height();
+        let input = self.input.read(cx);
+        let focused = input.focus.is_focused(window);
+        let caret_color = theme::accent();
+
+        let shape = |text: SharedString, color: gpui::Hsla, window: &mut Window| {
+            let run = TextRun {
+                len: text.len(),
+                font: style.font(),
+                color,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+                letter_spacing: None,
+            };
+            window
+                .text_system()
+                .shape_line(text, font_size, &[run], None)
+        };
+
+        let line = if input.value.is_empty() {
+            shape(input.placeholder.clone(), gpui::rgb_to_hsla(gpui::rgb(0x8a8a8a)), window)
+        } else {
+            shape(input.value.clone().into(), style.color, window)
+        };
+        let x_of = |chars: usize| line.x_for_index(input.byte_index(chars));
+        let caret_x = x_of(input.caret);
+
+        let mut scroll_x = input.scroll_x;
+        if caret_x - scroll_x < px(0.0) {
+            scroll_x = caret_x;
+        } else if caret_x - scroll_x > bounds.size.width - px(1.0) {
+            scroll_x = caret_x - bounds.size.width + px(1.0);
+        }
+        let max_scroll = (line.width() + px(1.0) - bounds.size.width).max(px(0.0));
+        scroll_x = scroll_x.max(px(0.0)).min(max_scroll);
+
+        let selection = input.selection().map(|(from, to)| {
+            let color = if focused {
+                theme::accent_soft()
+            } else {
+                gpui::rgba(0x8a8a8a55)
+            };
+            fill(
+                Bounds::new(
+                    point(bounds.left() + x_of(from) - scroll_x, bounds.top()),
+                    size(x_of(to) - x_of(from), line_height),
+                ),
+                color,
+            )
+        });
+        let caret = (focused && input.blink_on).then(|| {
+            fill(
+                Bounds::new(
+                    point(bounds.left() + caret_x - scroll_x, bounds.top()),
+                    size(px(1.0), line_height),
+                ),
+                caret_color,
+            )
+        });
+
+        let stored = line.clone();
+        self.input.update(cx, |input, _| {
+            input.scroll_x = scroll_x;
+            input.line = Some(stored);
+            input.bounds = bounds;
+        });
+        InputTextPrepaint {
+            line,
+            scroll_x,
+            selection,
+            caret,
+        }
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let input = self.input.clone();
+        window.on_mouse_event(move |e: &MouseMoveEvent, phase, _, cx| {
+            if phase != DispatchPhase::Bubble {
+                return;
+            }
+            input.update(cx, |this, cx| {
+                if !this.dragging {
+                    return;
+                }
+                if e.pressed_button != Some(MouseButton::Left) {
+                    this.dragging = false;
+                    return;
+                }
+                let at = this.char_at(e.position);
+                if at != this.caret {
+                    this.caret = at;
+                    this.reset_blink(cx);
+                    cx.notify();
+                }
+            });
+        });
+        let input = self.input.clone();
+        window.on_mouse_event(move |e: &MouseUpEvent, phase, _, cx| {
+            if phase == DispatchPhase::Bubble && e.button == MouseButton::Left {
+                input.update(cx, |this, _| this.dragging = false);
+            }
+        });
+
+        let line_height = window.line_height();
+        let origin = point(bounds.left() - prepaint.scroll_x, bounds.top());
+        window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
+            if let Some(selection) = prepaint.selection.take() {
+                window.paint_quad(selection);
+            }
+            prepaint
+                .line
+                .paint(origin, line_height, gpui::TextAlign::Left, None, window, cx)
+                .ok();
+            if let Some(caret) = prepaint.caret.take() {
+                window.paint_quad(caret);
+            }
+        });
     }
 }
