@@ -1,14 +1,15 @@
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement,
-    Styled, Subscription, Window, div, prelude::*, px,
+    Context, InteractiveElement, IntoElement, ParentElement, Render, ScrollWheelEvent,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*, px,
 };
 
 use super::search::message;
-use crate::api::ytdlp;
+use crate::api::{feeds, ytdlp};
 use crate::model::{Channel, Track};
 use crate::runtime;
 use crate::state::Stores;
 use crate::ui::components::button::{ButtonVariant, button};
+use crate::ui::components::smooth_scroll::SmoothScroll;
 use crate::ui::components::spinner::spinner_fill;
 use crate::ui::components::track_row::RowAction;
 use crate::ui::components::video_card::{GRID_GAP, GRID_PAD, avatar, grid_metrics, video_card};
@@ -25,6 +26,7 @@ pub struct ChannelPage {
     has_more: bool,
     error: Option<String>,
     next_start: u32,
+    scroll: SmoothScroll,
     _subs: Vec<Subscription>,
 }
 
@@ -48,11 +50,19 @@ impl ChannelPage {
             has_more: false,
             error: None,
             next_start: 1,
+            scroll: SmoothScroll::new(),
             _subs: subs,
         };
         this.ensure_avatar(cx);
         this.load_more(cx);
         this
+    }
+
+    fn on_wheel(&mut self, ev: &ScrollWheelEvent, cx: &mut Context<Self>) {
+        if self.scroll.on_wheel(ev) {
+            cx.stop_propagation();
+            cx.notify();
+        }
     }
 
     fn ensure_avatar(&self, cx: &mut Context<Self>) {
@@ -72,15 +82,34 @@ impl ChannelPage {
         let bin = self.stores.prefs.read(cx).prefs.ytdlp_path.clone();
         let id = self.channel.id.clone();
         let (start, end) = (self.next_start, self.next_start + PAGE - 1);
+        let first_page = start == 1;
         cx.spawn(async move |this, cx| {
-            let result =
-                runtime::run(async move { ytdlp::channel_videos(&bin, &id, start, end).await })
-                    .await;
+            let (result, feed) = runtime::run(async move {
+                let feed = async {
+                    if !first_page {
+                        return Vec::new();
+                    }
+                    feeds::latest(&id).await.unwrap_or_else(|e| {
+                        tracing::warn!("loading the channel feed failed: {e}");
+                        Vec::new()
+                    })
+                };
+                tokio::join!(ytdlp::channel_videos(&bin, &id, start, end), feed)
+            })
+            .await;
             let failure = this
                 .update(cx, |this, cx| {
                     this.loading = false;
                     let failure = match result {
-                        Ok(page) => {
+                        Ok(mut page) => {
+                            for t in &mut page.tracks {
+                                if t.upload_day.is_none() {
+                                    t.upload_day = feed
+                                        .iter()
+                                        .find(|f| f.id == t.id)
+                                        .and_then(|f| f.upload_day);
+                                }
+                            }
                             this.next_start = end + 1;
                             this.has_more = page.tracks.len() as u32 >= PAGE;
                             let fresh: Vec<Track> = page
@@ -133,6 +162,7 @@ impl ChannelPage {
 
 impl Render for ChannelPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.scroll.step(window);
         let collapsed = self.stores.prefs.read(cx).prefs.sidebar_collapsed;
         let (_, card_w) = grid_metrics(window, collapsed);
         let playing_id = self.stores.player.read(cx).current().map(|t| t.id.clone());
@@ -293,6 +323,8 @@ impl Render for ChannelPage {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .track_scroll(&self.scroll.handle)
+                .on_scroll_wheel(cx.listener(|this, ev, _, cx| this.on_wheel(ev, cx)))
                 .gap(px(16.0))
                 .child(div().flex().flex_wrap().gap(px(GRID_GAP)).children(cards))
                 .when(self.has_more, |s| {
