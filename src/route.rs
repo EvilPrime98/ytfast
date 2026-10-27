@@ -15,6 +15,7 @@ pub enum Route {
     Library,
     History,
     Channels,
+    Subscriptions,
     Channel(Channel),
     Settings,
 }
@@ -33,6 +34,7 @@ impl Route {
             Self::Library => "Library",
             Self::History => "History",
             Self::Channels => "Channels",
+            Self::Subscriptions => "My Feed",
             Self::Channel(_) => "Channel",
             Self::Settings => "Settings",
         }
