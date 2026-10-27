@@ -121,12 +121,12 @@ fn show_main_window(cx: &mut App) {
 }
 
 fn open_main_window(cx: &mut App) {
-    // 1100x720, min 900x600, frameless on win/linux with custom controls (macOS: inset
+    // 1400x900, min 1000x650, frameless on win/linux with custom controls (macOS: inset
     // titlebar with native traffic lights).
-    let bounds = Bounds::centered(None, size(px(1100.0), px(720.0)), cx);
+    let bounds = Bounds::centered(None, size(px(1400.0), px(900.0)), cx);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
-        window_min_size: Some(size(px(900.0), px(600.0))),
+        window_min_size: Some(size(px(1000.0), px(650.0))),
         titlebar: Some(TitlebarOptions {
             title: Some("YTFast".into()),
             appears_transparent: true,
