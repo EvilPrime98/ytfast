@@ -35,6 +35,12 @@ impl SmoothScroll {
         true
     }
 
+    pub fn reset(&mut self) {
+        self.target = 0.0;
+        self.gliding = false;
+        self.handle.set_offset(point(px(0.0), px(0.0)));
+    }
+
     /// Advances the glide by one frame; call it from `render`.
     pub fn step(&mut self, window: &mut Window) {
         if !self.gliding {

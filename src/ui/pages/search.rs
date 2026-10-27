@@ -2,13 +2,15 @@
 
 use gpui::{
     Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*, px,
+    ScrollWheelEvent, StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*,
+    px,
 };
 
 use crate::route::{Navigate, Route};
 use crate::state::Stores;
 use crate::state::search::SearchMode;
 use crate::ui::components::button::{ButtonVariant, button};
+use crate::ui::components::smooth_scroll::SmoothScroll;
 use crate::ui::components::spinner::spinner_fill;
 use crate::ui::components::text_input::{TextInput, TextInputEvent};
 use crate::ui::components::track_row::{RowAction, track_row};
@@ -19,6 +21,8 @@ use crate::ui::{theme, toast};
 pub struct SearchPage {
     stores: Stores,
     input: Entity<TextInput>,
+    video_scroll: SmoothScroll,
+    channel_scroll: SmoothScroll,
     _subs: Vec<Subscription>,
 }
 
@@ -72,20 +76,37 @@ impl SearchPage {
         Self {
             stores,
             input,
+            video_scroll: SmoothScroll::new(),
+            channel_scroll: SmoothScroll::new(),
             _subs: subs,
         }
     }
 
     fn submit(&mut self, cx: &mut Context<Self>) {
+        self.video_scroll.reset();
+        self.channel_scroll.reset();
         let query = self.input.read(cx).value().to_string();
         let (bin, limit) = {
             let p = &self.stores.prefs.read(cx).prefs;
             (p.ytdlp_path.clone(), p.search_limit)
         };
-        self.stores.search.update(cx, |s, cx| match s.mode {
-            SearchMode::Videos => s.run(query, bin, limit, cx).detach(),
-            SearchMode::Channels => s.run_channels(query, bin, limit, cx).detach(),
-        });
+        self.stores
+            .search
+            .update(cx, |s, cx| s.run(query, bin, limit, cx).detach());
+    }
+
+    fn on_video_wheel(&mut self, ev: &ScrollWheelEvent, cx: &mut Context<Self>) {
+        if self.video_scroll.on_wheel(ev) {
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn on_channel_wheel(&mut self, ev: &ScrollWheelEvent, cx: &mut Context<Self>) {
+        if self.channel_scroll.on_wheel(ev) {
+            cx.stop_propagation();
+            cx.notify();
+        }
     }
 
     fn channel_rows(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
@@ -203,17 +224,15 @@ impl SearchPage {
 }
 
 impl Render for SearchPage {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.video_scroll.step(window);
+        self.channel_scroll.step(window);
         let search = self.stores.search.read(cx);
         let mode = search.mode;
         let results = search.results.clone();
         let loading = search.loading;
         let channel_mode = mode == SearchMode::Channels;
-        let searched = if channel_mode {
-            search.channels_searched
-        } else {
-            search.searched
-        };
+        let searched = search.searched;
         let channel_count = search.channels.len();
         let playing_id = self.stores.player.read(cx).current().map(|t| t.id.clone());
 
@@ -278,13 +297,13 @@ impl Render for SearchPage {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .track_scroll(&self.channel_scroll.handle)
+                .on_scroll_wheel(cx.listener(|this, ev, _, cx| this.on_channel_wheel(ev, cx)))
                 .gap(px(2.0))
                 .children(channel_rows)
                 .into_any_element()
         } else if loading {
             spinner_fill().into_any_element()
-        } else if channel_mode && !searched {
-            message("Type a channel name and press Enter").into_any_element()
         } else if !searched {
             div()
                 .flex()
@@ -319,6 +338,8 @@ impl Render for SearchPage {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .track_scroll(&self.video_scroll.handle)
+                .on_scroll_wheel(cx.listener(|this, ev, _, cx| this.on_video_wheel(ev, cx)))
                 .gap(px(2.0))
                 .children(rows)
                 .into_any_element()
