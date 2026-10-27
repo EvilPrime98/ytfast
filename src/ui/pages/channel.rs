@@ -9,6 +9,7 @@ use crate::model::{Channel, Track};
 use crate::runtime;
 use crate::state::Stores;
 use crate::ui::components::button::{ButtonVariant, button};
+use crate::ui::components::spinner::spinner_fill;
 use crate::ui::components::track_row::RowAction;
 use crate::ui::components::video_card::{GRID_GAP, GRID_PAD, avatar, grid_metrics, video_card};
 use crate::ui::icons::{Icon, icon};
@@ -276,7 +277,7 @@ impl Render for ChannelPage {
             });
 
         let body = if self.tracks.is_empty() && self.loading {
-            message("Loading videos…".to_string()).into_any_element()
+            spinner_fill().into_any_element()
         } else if self.tracks.is_empty() {
             message(
                 self.error

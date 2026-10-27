@@ -9,6 +9,7 @@ use crate::route::{Navigate, Route};
 use crate::state::Stores;
 use crate::state::search::SearchMode;
 use crate::ui::components::button::{ButtonVariant, button};
+use crate::ui::components::spinner::spinner_fill;
 use crate::ui::components::text_input::{TextInput, TextInputEvent};
 use crate::ui::components::track_row::{RowAction, track_row};
 use crate::ui::components::video_card::avatar;
@@ -281,7 +282,7 @@ impl Render for SearchPage {
                 .children(channel_rows)
                 .into_any_element()
         } else if loading {
-            message("Searching…").into_any_element()
+            spinner_fill().into_any_element()
         } else if channel_mode && !searched {
             message("Type a channel name and press Enter").into_any_element()
         } else if !searched {
