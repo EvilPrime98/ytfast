@@ -115,6 +115,7 @@ impl TextInput {
         let at = self.byte_index(self.caret);
         self.value.insert_str(at, &clean);
         self.caret += clean.chars().count();
+        self.anchor = None;
         cx.emit(TextInputEvent::Changed);
     }
 
@@ -200,6 +201,7 @@ impl TextInput {
                     let (from, to) = (self.byte_index(self.caret - 1), self.byte_index(self.caret));
                     self.value.replace_range(from..to, "");
                     self.caret -= 1;
+                    self.anchor = None;
                 }
                 cx.emit(TextInputEvent::Changed);
             }
@@ -210,6 +212,7 @@ impl TextInput {
                     }
                     let (from, to) = (self.byte_index(self.caret), self.byte_index(self.caret + 1));
                     self.value.replace_range(from..to, "");
+                    self.anchor = None;
                 }
                 cx.emit(TextInputEvent::Changed);
             }
