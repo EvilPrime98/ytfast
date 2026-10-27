@@ -21,6 +21,7 @@ use crate::ui::pages::library::LibraryPage;
 use crate::ui::pages::now_playing::NowPlayingPage;
 use crate::ui::pages::search::SearchPage;
 use crate::ui::pages::settings::SettingsPage;
+use crate::ui::pages::subscriptions::SubscriptionsPage;
 use crate::ui::shell::header::header;
 use crate::ui::shell::player_bar::PlayerBar;
 use crate::ui::shell::sidebar::Sidebar;
@@ -63,6 +64,7 @@ enum Page {
     Library(Entity<LibraryPage>),
     History(Entity<HistoryPage>),
     Channels(Entity<ChannelsPage>),
+    Subscriptions(Entity<SubscriptionsPage>),
     Channel(Entity<ChannelPage>),
     Settings(Entity<SettingsPage>),
 }
@@ -217,6 +219,15 @@ impl AppRoot {
                 ));
                 Page::Channels(page)
             }
+            Route::Subscriptions => {
+                let page = cx.new(|cx| SubscriptionsPage::new(self.stores.clone(), cx));
+                self._page_subs.push(cx.subscribe_in(
+                    &page,
+                    window,
+                    |this, _, ev: &Navigate, window, cx| this.navigate(ev.0.clone(), window, cx),
+                ));
+                Page::Subscriptions(page)
+            }
             Route::Channel(channel) => {
                 Page::Channel(cx.new(|cx| ChannelPage::new(self.stores.clone(), channel, cx)))
             }
@@ -266,6 +277,7 @@ impl Render for AppRoot {
             Page::Library(page) => AnyView::from(page.clone()),
             Page::History(page) => AnyView::from(page.clone()),
             Page::Channels(page) => AnyView::from(page.clone()),
+            Page::Subscriptions(page) => AnyView::from(page.clone()),
             Page::Channel(page) => AnyView::from(page.clone()),
             Page::Settings(page) => AnyView::from(page.clone()),
         };
@@ -328,6 +340,7 @@ fn dev_route() -> Option<Route> {
         "library" => Route::Library,
         "history" => Route::History,
         "channels" => Route::Channels,
+        "subscriptions" => Route::Subscriptions,
         "settings" => Route::Settings,
         _ => return None,
     })

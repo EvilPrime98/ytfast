@@ -7,6 +7,7 @@ pub mod library;
 pub mod player;
 pub mod prefs;
 pub mod search;
+pub mod subscriptions;
 pub mod thumbs;
 
 use gpui::{App, AppContext as _, Entity, Global};
@@ -21,6 +22,7 @@ pub struct Stores {
     pub channels: Entity<channels::ChannelsStore>,
     pub search: Entity<search::SearchStore>,
     pub feed: Entity<feed::FeedStore>,
+    pub subscriptions: Entity<subscriptions::SubscriptionsStore>,
     pub thumbs: Entity<thumbs::Thumbnails>,
     pub player: Entity<player::PlayerStore>,
 }
@@ -48,12 +50,27 @@ impl Stores {
             }
         })
         .detach();
+        let subscriptions = cx.new(|_| subscriptions::SubscriptionsStore::load());
+        cx.observe(&channels, {
+            let subscriptions = subscriptions.clone();
+            move |channels, cx| {
+                let ids = channels
+                    .read(cx)
+                    .favorites
+                    .iter()
+                    .map(|f| f.channel.id.clone())
+                    .collect();
+                subscriptions.update(cx, |s, cx| s.sync(ids, cx));
+            }
+        })
+        .detach();
         Self {
             library: cx.new(|_| library::LibraryStore::load()),
             history,
             channels,
             search: cx.new(|_| search::SearchStore::default()),
             feed: cx.new(|_| feed::FeedStore::load()),
+            subscriptions,
             thumbs: cx.new(|_| thumbs::Thumbnails::default()),
             player,
             prefs,
