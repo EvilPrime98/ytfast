@@ -1,12 +1,13 @@
 use gpui::{
-    Context, EventEmitter, InteractiveElement, IntoElement, ParentElement, Render, ScrollDelta,
-    ScrollHandle, ScrollWheelEvent, StatefulInteractiveElement, Styled, Subscription, Window, div,
-    point, prelude::*, px,
+    Context, EventEmitter, InteractiveElement, IntoElement, ParentElement, Render,
+    ScrollWheelEvent, StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*,
+    px,
 };
 
 use crate::route::{Navigate, Route};
 use crate::state::Stores;
 use crate::ui::components::button::{ButtonVariant, button};
+use crate::ui::components::smooth_scroll::SmoothScroll;
 use crate::ui::components::track_row::RowAction;
 use crate::ui::components::video_card::{GRID_GAP, GRID_PAD, grid_metrics, video_card};
 use crate::ui::icons::{Icon, icon};
@@ -14,15 +15,10 @@ use crate::ui::{theme, toast};
 
 const PAGE: usize = 30;
 const PREFIX: &str = "subs";
-const WHEEL_STEP: f32 = 64.0;
-const SCROLL_EASE: f32 = 0.15;
-const SCROLL_SNAP: f32 = 0.5;
 
 pub struct SubscriptionsPage {
     stores: Stores,
-    scroll: ScrollHandle,
-    scroll_target: f32,
-    gliding: bool,
+    scroll: SmoothScroll,
     shown: usize,
     _subs: Vec<Subscription>,
 }
@@ -47,9 +43,7 @@ impl SubscriptionsPage {
         ];
         let page = Self {
             stores,
-            scroll: ScrollHandle::new(),
-            scroll_target: 0.0,
-            gliding: false,
+            scroll: SmoothScroll::new(),
             shown: PAGE,
             _subs: subs,
         };
@@ -59,38 +53,10 @@ impl SubscriptionsPage {
     }
 
     fn on_wheel(&mut self, ev: &ScrollWheelEvent, cx: &mut Context<Self>) {
-        let max = f32::from(self.scroll.max_offset().y);
-        let current = -f32::from(self.scroll.offset().y);
-        let ScrollDelta::Lines(lines) = ev.delta else {
-            self.gliding = false;
-            return;
-        };
-        let base = if self.gliding {
-            self.scroll_target
-        } else {
-            current
-        };
-        self.scroll_target = (base - lines.y * WHEEL_STEP).clamp(0.0, max);
-        self.gliding = true;
-        cx.stop_propagation();
-        cx.notify();
-    }
-
-    fn step_glide(&mut self, window: &mut Window) {
-        if !self.gliding {
-            return;
+        if self.scroll.on_wheel(ev) {
+            cx.stop_propagation();
+            cx.notify();
         }
-        let max = f32::from(self.scroll.max_offset().y);
-        let target = self.scroll_target.min(max);
-        let current = -f32::from(self.scroll.offset().y);
-        let next = if (target - current).abs() < SCROLL_SNAP {
-            self.gliding = false;
-            target
-        } else {
-            window.request_animation_frame();
-            current + (target - current) * SCROLL_EASE
-        };
-        self.scroll.set_offset(point(px(0.0), px(-next)));
     }
 
     fn refresh(&self, force: bool, cx: &mut Context<Self>) {
@@ -127,7 +93,7 @@ impl SubscriptionsPage {
 
 impl Render for SubscriptionsPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.step_glide(window);
+        self.scroll.step(window);
         let collapsed = self.stores.prefs.read(cx).prefs.sidebar_collapsed;
         let (_, card_w) = grid_metrics(window, collapsed);
         let playing_id = self.stores.player.read(cx).current().map(|t| t.id.clone());
@@ -289,7 +255,7 @@ impl Render for SubscriptionsPage {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .track_scroll(&self.scroll)
+                    .track_scroll(&self.scroll.handle)
                     .on_scroll_wheel(cx.listener(|this, ev, _, cx| this.on_wheel(ev, cx)))
                     .child(body),
             )

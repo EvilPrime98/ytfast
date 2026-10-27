@@ -4,13 +4,14 @@ use std::collections::HashSet;
 
 use gpui::{
     Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement, Render,
-    ScrollDelta, ScrollHandle, ScrollWheelEvent, StatefulInteractiveElement, Styled, Subscription,
-    Window, div, point, prelude::*, px,
+    ScrollWheelEvent, StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::*,
+    px,
 };
 
 use crate::model::Track;
 use crate::route::{Navigate, Route};
 use crate::state::Stores;
+use crate::ui::components::smooth_scroll::SmoothScroll;
 use crate::ui::components::text_input::{TextInput, TextInputEvent};
 use crate::ui::components::track_row::RowAction;
 use crate::ui::components::video_card::video_card;
@@ -23,18 +24,13 @@ const PAD: f32 = 24.0;
 /// Rows of cards shown per section.
 const SECTION_ROWS: usize = 2;
 const RECENT_LIMIT: usize = 12;
-const WHEEL_STEP: f32 = 64.0;
-const SCROLL_EASE: f32 = 0.15;
-const SCROLL_SNAP: f32 = 0.5;
 /// Element-id prefixes, one per feed section (the feed has a handful at most).
 const FEED_PREFIXES: [&str; 5] = ["feed-0", "feed-1", "feed-2", "feed-3", "feed-4"];
 
 pub struct HomePage {
     stores: Stores,
     input: Entity<TextInput>,
-    scroll: ScrollHandle,
-    scroll_target: f32,
-    gliding: bool,
+    scroll: SmoothScroll,
     _subs: Vec<Subscription>,
 }
 
@@ -67,9 +63,7 @@ impl HomePage {
         let page = Self {
             stores,
             input,
-            scroll: ScrollHandle::new(),
-            scroll_target: 0.0,
-            gliding: false,
+            scroll: SmoothScroll::new(),
             _subs: subs,
         };
         page.ensure_thumbs(cx);
@@ -78,38 +72,10 @@ impl HomePage {
     }
 
     fn on_wheel(&mut self, ev: &ScrollWheelEvent, cx: &mut Context<Self>) {
-        let max = f32::from(self.scroll.max_offset().y);
-        let current = -f32::from(self.scroll.offset().y);
-        let ScrollDelta::Lines(lines) = ev.delta else {
-            self.gliding = false;
-            return;
-        };
-        let base = if self.gliding {
-            self.scroll_target
-        } else {
-            current
-        };
-        self.scroll_target = (base - lines.y * WHEEL_STEP).clamp(0.0, max);
-        self.gliding = true;
-        cx.stop_propagation();
-        cx.notify();
-    }
-
-    fn step_glide(&mut self, window: &mut Window) {
-        if !self.gliding {
-            return;
+        if self.scroll.on_wheel(ev) {
+            cx.stop_propagation();
+            cx.notify();
         }
-        let max = f32::from(self.scroll.max_offset().y);
-        let target = self.scroll_target.min(max);
-        let current = -f32::from(self.scroll.offset().y);
-        let next = if (target - current).abs() < SCROLL_SNAP {
-            self.gliding = false;
-            target
-        } else {
-            window.request_animation_frame();
-            current + (target - current) * SCROLL_EASE
-        };
-        self.scroll.set_offset(point(px(0.0), px(-next)));
     }
 
     fn refresh_feed(&self, cx: &mut Context<Self>) {
@@ -227,7 +193,7 @@ impl HomePage {
 
 impl Render for HomePage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.step_glide(window);
+        self.scroll.step(window);
         let sidebar = if self.stores.prefs.read(cx).prefs.sidebar_collapsed {
             0.0
         } else {
@@ -314,7 +280,7 @@ impl Render for HomePage {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .track_scroll(&self.scroll)
+                    .track_scroll(&self.scroll.handle)
                     .on_scroll_wheel(cx.listener(|this, ev, _, cx| this.on_wheel(ev, cx)))
                     .gap(px(24.0))
                     .children(blocks),
