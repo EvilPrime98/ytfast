@@ -35,8 +35,8 @@ impl Render for Sidebar {
         let saved = self.stores.library.read(cx).tracks.len();
         let new_videos = self.stores.channels.read(cx).unseen_total();
         let entries: [(Route, Icon, String); 8] = [
-            (Route::Search, Icon::Search, "Search".into()),
             (Route::Home, Icon::Music, "Home".into()),
+            (Route::Search, Icon::Search, "Search".into()),
             (Route::Subscriptions, Icon::Play, "My Feed".into()),
             (Route::NowPlaying, Icon::Queue, "Now playing".into()),
             (
