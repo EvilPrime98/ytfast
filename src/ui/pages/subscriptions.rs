@@ -8,6 +8,7 @@ use crate::route::{Navigate, Route};
 use crate::state::Stores;
 use crate::ui::components::button::{ButtonVariant, button};
 use crate::ui::components::smooth_scroll::SmoothScroll;
+use crate::ui::components::spinner::spinner;
 use crate::ui::components::track_row::RowAction;
 use crate::ui::components::video_card::{GRID_GAP, GRID_PAD, grid_metrics, video_card};
 use crate::ui::icons::{Icon, icon};
@@ -178,12 +179,10 @@ impl Render for SubscriptionsPage {
                 ButtonVariant::Classic,
                 cx.listener(|_, _, _, cx| cx.emit(Navigate(Route::Channels))),
             ))
+        } else if shown.is_empty() && loading {
+            div().flex().justify_center().py(px(64.0)).child(spinner())
         } else if shown.is_empty() {
-            message(if loading {
-                "Loading videos…"
-            } else {
-                "No videos found."
-            })
+            message("No videos found.")
         } else {
             div()
                 .flex()
