@@ -34,7 +34,7 @@ impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let saved = self.stores.library.read(cx).tracks.len();
         let new_videos = self.stores.channels.read(cx).unseen_total();
-        let entries: [(Route, Icon, String); 8] = [
+        let entries: [(Route, Icon, String); 9] = [
             (Route::Home, Icon::Music, "Home".into()),
             (Route::Search, Icon::Search, "Search".into()),
             (Route::Subscriptions, Icon::Play, "My Feed".into()),
@@ -58,6 +58,7 @@ impl Render for Sidebar {
                     "Channels".into()
                 },
             ),
+            (Route::Playlists, Icon::Playlist, "Playlists".into()),
             (Route::Settings, Icon::Gear, "Settings".into()),
         ];
         div()

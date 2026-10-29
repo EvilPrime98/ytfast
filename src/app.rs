@@ -20,6 +20,7 @@ use crate::ui::pages::home::HomePage;
 use crate::ui::pages::library::LibraryPage;
 use crate::ui::pages::now_playing::NowPlayingPage;
 use crate::ui::pages::playlist::PlaylistPage;
+use crate::ui::pages::playlists::PlaylistsPage;
 use crate::ui::pages::search::SearchPage;
 use crate::ui::pages::settings::SettingsPage;
 use crate::ui::pages::subscriptions::SubscriptionsPage;
@@ -68,6 +69,7 @@ enum Page {
     Subscriptions(Entity<SubscriptionsPage>),
     Channel(Entity<ChannelPage>),
     Playlist(Entity<PlaylistPage>),
+    Playlists(Entity<PlaylistsPage>),
     Settings(Entity<SettingsPage>),
 }
 
@@ -244,6 +246,15 @@ impl AppRoot {
                     }));
                 Page::Channel(page)
             }
+            Route::Playlists => {
+                let page = cx.new(|cx| PlaylistsPage::new(self.stores.clone(), cx));
+                self._page_subs.push(cx.subscribe_in(
+                    &page,
+                    window,
+                    |this, _, ev: &Navigate, window, cx| this.navigate(ev.0.clone(), window, cx),
+                ));
+                Page::Playlists(page)
+            }
             Route::Playlist(playlist) => {
                 Page::Playlist(cx.new(|cx| PlaylistPage::new(self.stores.clone(), playlist, cx)))
             }
@@ -296,6 +307,7 @@ impl Render for AppRoot {
             Page::Subscriptions(page) => AnyView::from(page.clone()),
             Page::Channel(page) => AnyView::from(page.clone()),
             Page::Playlist(page) => AnyView::from(page.clone()),
+            Page::Playlists(page) => AnyView::from(page.clone()),
             Page::Settings(page) => AnyView::from(page.clone()),
         };
 
@@ -357,6 +369,7 @@ fn dev_route() -> Option<Route> {
         "library" => Route::Library,
         "history" => Route::History,
         "channels" => Route::Channels,
+        "playlists" => Route::Playlists,
         "subscriptions" => Route::Subscriptions,
         "settings" => Route::Settings,
         _ => return None,

@@ -248,6 +248,7 @@ pub fn parse_playlists(json: &str) -> Result<Vec<Playlist>, YtError> {
                 id: id.to_string(),
                 title: text("title").unwrap_or("Untitled").to_string(),
                 thumb_id: thumb_id.to_string(),
+                owner: String::new(),
             })
         })
         .collect())

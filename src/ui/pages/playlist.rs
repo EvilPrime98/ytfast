@@ -35,6 +35,7 @@ impl PlaylistPage {
         let subs = vec![
             cx.observe(&stores.thumbs, |_, _, cx| cx.notify()),
             cx.observe(&stores.library, |_, _, cx| cx.notify()),
+            cx.observe(&stores.playlists, |_, _, cx| cx.notify()),
             cx.observe(&stores.player, |_, _, cx| cx.notify()),
             cx.observe(&stores.prefs, |_, _, cx| cx.notify()),
         ];
@@ -58,6 +59,13 @@ impl PlaylistPage {
         if self.scroll.on_wheel(ev) {
             cx.stop_propagation();
             cx.notify();
+        }
+    }
+
+    fn snapshot(&self) -> Playlist {
+        Playlist {
+            owner: self.owner.clone(),
+            ..self.playlist.clone()
         }
     }
 
@@ -88,6 +96,10 @@ impl PlaylistPage {
                             if !page.owner.is_empty() {
                                 this.owner = page.owner;
                             }
+                            let snapshot = this.snapshot();
+                            this.stores
+                                .playlists
+                                .update(cx, |p, cx| p.refresh(&snapshot, cx));
                             let fresh: Vec<Track> = page
                                 .tracks
                                 .into_iter()
@@ -136,6 +148,11 @@ impl Render for PlaylistPage {
             }
         };
 
+        let favorite = self
+            .stores
+            .playlists
+            .read(cx)
+            .is_favorite(&self.playlist.id);
         let title = if self.playlist.title.is_empty() {
             "Playlist".to_string()
         } else {
@@ -169,6 +186,21 @@ impl Render for PlaylistPage {
                         )
                     }),
             )
+            .child(button(
+                "playlist-favorite",
+                if favorite { "Favorited" } else { "Favorite" },
+                if favorite {
+                    ButtonVariant::Secondary
+                } else {
+                    ButtonVariant::Classic
+                },
+                cx.listener(|this, _, _, cx| {
+                    let playlist = this.snapshot();
+                    this.stores
+                        .playlists
+                        .update(cx, |p, cx| p.toggle(&playlist, cx));
+                }),
+            ))
             .when(!self.tracks.is_empty(), |s| {
                 s.child(button(
                     "playlist-play-all",

@@ -5,6 +5,7 @@ pub mod feed;
 pub mod history;
 pub mod library;
 pub mod player;
+pub mod playlists;
 pub mod prefs;
 pub mod search;
 pub mod subscriptions;
@@ -20,6 +21,7 @@ pub struct Stores {
     pub library: Entity<library::LibraryStore>,
     pub history: Entity<history::HistoryStore>,
     pub channels: Entity<channels::ChannelsStore>,
+    pub playlists: Entity<playlists::PlaylistsStore>,
     pub search: Entity<search::SearchStore>,
     pub feed: Entity<feed::FeedStore>,
     pub subscriptions: Entity<subscriptions::SubscriptionsStore>,
@@ -68,6 +70,7 @@ impl Stores {
             library: cx.new(|_| library::LibraryStore::load()),
             history,
             channels,
+            playlists: cx.new(|_| playlists::PlaylistsStore::load()),
             search: cx.new(|_| search::SearchStore::default()),
             feed: cx.new(|_| feed::FeedStore::load()),
             subscriptions,
