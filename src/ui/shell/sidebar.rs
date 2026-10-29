@@ -79,7 +79,9 @@ impl Render for Sidebar {
                     .map(|(ix, (route, glyph, label))| {
                         let active = route == self.current
                             || (route == Route::Channels
-                                && matches!(self.current, Route::Channel(..) | Route::Playlist(_)));
+                                && matches!(self.current, Route::Channel(..)))
+                            || (route == Route::Playlists
+                                && matches!(self.current, Route::Playlist(_)));
                         let color = if active {
                             theme::text()
                         } else {
