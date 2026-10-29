@@ -5,14 +5,15 @@ use gpui::{
 
 use super::search::message;
 use crate::api::ytdlp;
-use crate::model::{Playlist, Track};
+use crate::model::{Playlist, Track, shuffled};
 use crate::runtime;
 use crate::state::Stores;
-use crate::ui::components::button::{ButtonVariant, button};
+use crate::ui::components::button::{ButtonVariant, button, icon_button};
 use crate::ui::components::smooth_scroll::SmoothScroll;
 use crate::ui::components::spinner::spinner_fill;
 use crate::ui::components::video_card::{GRID_PAD, grid_metrics};
 use crate::ui::components::video_grid::video_grid;
+use crate::ui::icons::Icon;
 use crate::ui::{theme, toast};
 
 const PAGE: u32 = 30;
@@ -148,6 +149,15 @@ impl Render for PlaylistPage {
             }
         };
 
+        let shuffle = {
+            let (stores, all) = (self.stores.clone(), self.tracks.clone());
+            move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut gpui::App| {
+                stores
+                    .player
+                    .update(cx, |p, cx| p.play_tracks(shuffled(&all), 0, cx))
+            }
+        };
+
         let favorite = self
             .stores
             .playlists
@@ -207,6 +217,13 @@ impl Render for PlaylistPage {
                     "Play all",
                     ButtonVariant::Classic,
                     play_all,
+                ))
+                .child(icon_button(
+                    "playlist-shuffle",
+                    Icon::Shuffle,
+                    "Shuffle",
+                    ButtonVariant::Secondary,
+                    shuffle,
                 ))
             });
 

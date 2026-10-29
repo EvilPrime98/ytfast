@@ -5,6 +5,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
 };
 
+use crate::ui::icons::{Icon, icon};
 use crate::ui::theme;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -16,6 +17,26 @@ pub enum ButtonVariant {
 
 pub fn button(
     id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    variant: ButtonVariant,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<gpui::Div> {
+    styled_button(id, None, label, variant, on_click)
+}
+
+pub fn icon_button(
+    id: impl Into<ElementId>,
+    glyph: Icon,
+    label: impl Into<SharedString>,
+    variant: ButtonVariant,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<gpui::Div> {
+    styled_button(id, Some(glyph), label, variant, on_click)
+}
+
+fn styled_button(
+    id: impl Into<ElementId>,
+    glyph: Option<Icon>,
     label: impl Into<SharedString>,
     variant: ButtonVariant,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -37,6 +58,7 @@ pub fn button(
         .whitespace_nowrap()
         .cursor_pointer()
         .on_click(on_click)
+        .children(glyph.map(|g| icon(g, px(16.0))))
         .child(label.into());
     match variant {
         ButtonVariant::Classic => base

@@ -88,6 +88,13 @@ pub fn looks_like_url(input: &str) -> bool {
     t.starts_with("http://") || t.starts_with("https://")
 }
 
+pub fn shuffled(tracks: &[Track]) -> Vec<Track> {
+    use rand::seq::SliceRandom;
+    let mut out = tracks.to_vec();
+    out.shuffle(&mut rand::rng());
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

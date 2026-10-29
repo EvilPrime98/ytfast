@@ -24,6 +24,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 open = "5"
+rand = "0.10"
 notify-rust = "4"
 rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-aac", "symphonia-isomp4", "symphonia-mp3", "symphonia-vorbis", "symphonia-flac", "symphonia-wav"] }
 
