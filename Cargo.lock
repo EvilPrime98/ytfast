@@ -8730,6 +8730,7 @@ dependencies = [
  "notify-rust",
  "open",
  "rand 0.10.3",
+ "raw-window-handle",
  "reqwest",
  "rfd",
  "rodio",
@@ -8742,6 +8743,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "tray-icon",
+ "windows-sys 0.61.2",
  "winresource",
  "wsola",
 ]
