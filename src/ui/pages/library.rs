@@ -7,8 +7,9 @@ use gpui::{
     uniform_list,
 };
 
+use crate::model::shuffled;
 use crate::state::Stores;
-use crate::ui::components::button::{ButtonVariant, button};
+use crate::ui::components::button::{ButtonVariant, button, icon_button};
 use crate::ui::components::track_row::{RowAction, track_row};
 use crate::ui::icons::{Icon, icon};
 use crate::ui::{theme, toast};
@@ -62,6 +63,8 @@ impl Render for LibraryPage {
         let tracks = self.stores.library.read(cx).tracks.clone();
         let stores = self.stores.clone();
         let all = tracks.clone();
+        let shuffle_stores = stores.clone();
+        let shuffle_all = tracks.clone();
         div()
             .flex()
             .flex_col()
@@ -83,16 +86,32 @@ impl Render for LibraryPage {
                             .child("Library"),
                     )
                     .when(!tracks.is_empty(), |s| {
-                        s.child(button(
-                            "lib-play-all",
-                            "Play all",
-                            ButtonVariant::Classic,
-                            move |_, _, cx| {
-                                stores
-                                    .player
-                                    .update(cx, |p, cx| p.play_tracks(all.clone(), 0, cx))
-                            },
-                        ))
+                        s.child(
+                            div()
+                                .flex()
+                                .gap(px(8.0))
+                                .child(icon_button(
+                                    "lib-shuffle",
+                                    Icon::Shuffle,
+                                    "Shuffle",
+                                    ButtonVariant::Secondary,
+                                    move |_, _, cx| {
+                                        shuffle_stores.player.update(cx, |p, cx| {
+                                            p.play_tracks(shuffled(&shuffle_all), 0, cx)
+                                        })
+                                    },
+                                ))
+                                .child(button(
+                                    "lib-play-all",
+                                    "Play all",
+                                    ButtonVariant::Classic,
+                                    move |_, _, cx| {
+                                        stores
+                                            .player
+                                            .update(cx, |p, cx| p.play_tracks(all.clone(), 0, cx))
+                                    },
+                                )),
+                        )
                     }),
             )
             .child(if tracks.is_empty() {

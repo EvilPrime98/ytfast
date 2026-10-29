@@ -22,6 +22,7 @@ pub enum Icon {
     Prev,
     Queue,
     Search,
+    Shuffle,
     Spinner,
     Trash,
     Users,
@@ -33,7 +34,7 @@ pub enum Icon {
 
 impl Icon {
     #[cfg(test)]
-    pub const ALL: [Icon; 24] = [
+    pub const ALL: [Icon; 25] = [
         Self::Bell,
         Self::Burger,
         Self::ChevronDown,
@@ -51,6 +52,7 @@ impl Icon {
         Self::Prev,
         Self::Queue,
         Self::Search,
+        Self::Shuffle,
         Self::Spinner,
         Self::Trash,
         Self::Users,
@@ -79,6 +81,7 @@ impl Icon {
             Self::Prev => "icons/prev.svg",
             Self::Queue => "icons/queue.svg",
             Self::Search => "icons/search.svg",
+            Self::Shuffle => "icons/shuffle.svg",
             Self::Spinner => "icons/spinner.svg",
             Self::Trash => "icons/trash.svg",
             Self::Users => "icons/users.svg",
