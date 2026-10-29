@@ -51,6 +51,7 @@ impl ChannelPage {
             .update(cx, |c, cx| c.mark_channel_seen(&channel.id, cx));
         let subs = vec![
             cx.observe(&stores.channels, |_, _, cx| cx.notify()),
+            cx.observe(&stores.playlists, |_, _, cx| cx.notify()),
             cx.observe(&stores.thumbs, |_, _, cx| cx.notify()),
             cx.observe(&stores.library, |_, _, cx| cx.notify()),
             cx.observe(&stores.player, |_, _, cx| cx.notify()),
@@ -342,13 +343,21 @@ impl ChannelPage {
             .map(|(ix, playlist)| {
                 let thumb = self.stores.thumbs.read(cx).get(&playlist.thumb_id);
                 let open = playlist.clone();
+                let toggled = playlist.clone();
+                let favorite = self.stores.playlists.read(cx).is_favorite(&playlist.id);
                 playlist_card(
                     ix,
                     card_w,
                     playlist,
                     thumb,
+                    favorite,
                     cx.listener(move |_, _, _, cx| {
                         cx.emit(Navigate(Route::Playlist(open.clone())))
+                    }),
+                    cx.listener(move |this, _, _, cx| {
+                        this.stores
+                            .playlists
+                            .update(cx, |p, cx| p.toggle(&toggled, cx));
                     }),
                 )
             })

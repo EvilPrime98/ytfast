@@ -22,11 +22,13 @@ pub struct Channel {
     pub avatar_url: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Playlist {
     pub id: String,
     pub title: String,
     pub thumb_id: String,
+    pub owner: String,
 }
 
 /// `3:07`, `1:02:09`; `--:--` when unknown.

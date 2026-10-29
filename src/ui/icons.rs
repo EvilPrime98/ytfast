@@ -18,6 +18,7 @@ pub enum Icon {
     Pause,
     Play,
     Plus,
+    Playlist,
     Prev,
     Queue,
     Search,
@@ -32,7 +33,7 @@ pub enum Icon {
 
 impl Icon {
     #[cfg(test)]
-    pub const ALL: [Icon; 23] = [
+    pub const ALL: [Icon; 24] = [
         Self::Bell,
         Self::Burger,
         Self::ChevronDown,
@@ -46,6 +47,7 @@ impl Icon {
         Self::Pause,
         Self::Play,
         Self::Plus,
+        Self::Playlist,
         Self::Prev,
         Self::Queue,
         Self::Search,
@@ -73,6 +75,7 @@ impl Icon {
             Self::Pause => "icons/pause.svg",
             Self::Play => "icons/play.svg",
             Self::Plus => "icons/plus.svg",
+            Self::Playlist => "icons/playlist.svg",
             Self::Prev => "icons/prev.svg",
             Self::Queue => "icons/queue.svg",
             Self::Search => "icons/search.svg",
