@@ -102,9 +102,7 @@ fn main() {
 
             // A hidden start (login autostart) only makes sense when the tray can bring the
             // window back; otherwise show it.
-            if !(start_hidden && hides_to_tray(cx)) {
-                open_main_window(cx);
-            }
+            open_main_window(cx, !(start_hidden && hides_to_tray(cx)));
         });
 }
 
@@ -112,15 +110,19 @@ fn main() {
 fn show_main_window(cx: &mut App) {
     if let Some(window) = cx.windows().first().copied() {
         window
-            .update(cx, |_, window, _| window.activate_window())
+            .update(cx, |_, window, _| {
+                #[cfg(windows)]
+                platform::window::show(window);
+                window.activate_window();
+            })
             .ok();
         cx.activate(true);
     } else {
-        open_main_window(cx);
+        open_main_window(cx, true);
     }
 }
 
-fn open_main_window(cx: &mut App) {
+fn open_main_window(cx: &mut App, show: bool) {
     // 1400x900, min 1000x650, frameless on win/linux with custom controls (macOS: inset
     // titlebar with native traffic lights).
     let bounds = Bounds::centered(None, size(px(1400.0), px(900.0)), cx);
@@ -134,12 +136,20 @@ fn open_main_window(cx: &mut App) {
         }),
         window_decorations: Some(WindowDecorations::Client),
         app_id: Some("ytfast".into()),
+        show,
+        focus: show,
         ..Default::default()
     };
     let stores = cx.global::<Stores>().clone();
     cx.open_window(options, |window, cx| {
+        #[cfg(windows)]
+        window.on_window_should_close(cx, |window, cx| {
+            !(hides_to_tray(cx) && platform::window::hide(window))
+        });
         cx.new(|cx| AppRoot::new(stores, window, cx))
     })
     .unwrap();
-    cx.activate(true);
+    if show {
+        cx.activate(true);
+    }
 }
