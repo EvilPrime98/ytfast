@@ -88,6 +88,23 @@ pub async fn search_channels(bin: &str, query: &str, limit: u32) -> Result<Vec<C
     parse_channels(&run(cmd).await?)
 }
 
+pub async fn search_playlists(
+    bin: &str,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<Playlist>, YtError> {
+    let url = reqwest::Url::parse_with_params(
+        "https://www.youtube.com/results",
+        [("search_query", query), ("sp", "EgIQAw==")],
+    )
+    .map_err(|e| YtError::Failed(e.to_string()))?;
+    let mut cmd = command(bin);
+    cmd.args(["--flat-playlist", "-J", "--no-warnings", "--playlist-end"])
+        .arg(limit.to_string())
+        .arg(url.as_str());
+    parse_playlist_search(&run(cmd).await?)
+}
+
 fn flat_range(bin: &str, url: &str, start: u32, end: u32) -> Command {
     let mut cmd = command(bin);
     cmd.args(["--flat-playlist", "-J", "--no-warnings"])
@@ -227,6 +244,14 @@ fn video_id_of_thumbnail(url: &str) -> Option<&str> {
 }
 
 pub fn parse_playlists(json: &str) -> Result<Vec<Playlist>, YtError> {
+    playlists_from(json, false)
+}
+
+pub fn parse_playlist_search(json: &str) -> Result<Vec<Playlist>, YtError> {
+    playlists_from(json, true)
+}
+
+fn playlists_from(json: &str, with_owner: bool) -> Result<Vec<Playlist>, YtError> {
     let root: Value = serde_json::from_str(json).map_err(|e| YtError::Parse(e.to_string()))?;
     let entries = root
         .get("entries")
@@ -248,7 +273,14 @@ pub fn parse_playlists(json: &str) -> Result<Vec<Playlist>, YtError> {
                 id: id.to_string(),
                 title: text("title").unwrap_or("Untitled").to_string(),
                 thumb_id: thumb_id.to_string(),
-                owner: String::new(),
+                owner: if with_owner {
+                    text("channel")
+                        .or_else(|| text("uploader"))
+                        .unwrap_or_default()
+                        .to_string()
+                } else {
+                    String::new()
+                },
             })
         })
         .collect())
@@ -609,6 +641,22 @@ mod tests {
         assert_eq!(p.len(), 2);
         assert_eq!(p[0].thumb_id, "PXC_PYeB6F8");
         assert_eq!(p[1].thumb_id, "");
+    }
+
+    #[test]
+    fn playlist_search_fills_the_owner() {
+        let json = r#"{"entries":[
+            {"id":"PLabc","title":"Mix","uploader":"Rick"},
+            {"id":"PLdef","title":"Other","channel":"Ann","uploader":"x"},
+            {"id":"PLnone","title":"Ownerless"},
+            {"id":"dQw4w9WgXcQ","title":"a video"}
+        ]}"#;
+        let p = parse_playlist_search(json).unwrap();
+        assert_eq!(p.len(), 3);
+        assert_eq!(p[0].owner, "Rick");
+        assert_eq!(p[1].owner, "Ann");
+        assert_eq!(p[2].owner, "");
+        assert_eq!(parse_playlists(json).unwrap()[0].owner, "");
     }
 
     #[test]
