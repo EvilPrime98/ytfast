@@ -32,3 +32,9 @@ at startup.
 
 Use YTFast in line with YouTube's terms of service and the copyright rules where you live.
 Fonts: Geist (SIL OFL 1.1), see `assets/fonts/OFL.txt`.
+
+## More Screenshots
+
+<img width="1384" height="874" alt="image" src="https://github.com/user-attachments/assets/382caac0-5e1d-4c04-85aa-20479238b5c9" />
+
+<img width="1383" height="886" alt="image" src="https://github.com/user-attachments/assets/057a9e02-2fe7-4f8b-b298-a44003619ca6" />
