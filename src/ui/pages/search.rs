@@ -13,7 +13,7 @@ use crate::ui::components::button::{ButtonVariant, button};
 use crate::ui::components::smooth_scroll::SmoothScroll;
 use crate::ui::components::spinner::spinner_fill;
 use crate::ui::components::text_input::{TextInput, TextInputEvent};
-use crate::ui::components::track_row::{RowAction, track_row};
+use crate::ui::components::track_row::{RowAction, thumbnail, track_row};
 use crate::ui::components::video_card::avatar;
 use crate::ui::icons::{Icon, icon};
 use crate::ui::{theme, toast};
@@ -23,6 +23,7 @@ pub struct SearchPage {
     input: Entity<TextInput>,
     video_scroll: SmoothScroll,
     channel_scroll: SmoothScroll,
+    playlist_scroll: SmoothScroll,
     _subs: Vec<Subscription>,
 }
 
@@ -55,8 +56,15 @@ impl SearchPage {
                     .iter()
                     .map(|c| (c.id.clone(), c.avatar_url.clone()))
                     .collect();
+                let playlist_thumbs: Vec<String> = search
+                    .read(cx)
+                    .playlists
+                    .iter()
+                    .map(|p| p.thumb_id.clone())
+                    .filter(|id| !id.is_empty())
+                    .collect();
                 this.stores.thumbs.update(cx, |t, cx| {
-                    for id in &ids {
+                    for id in ids.iter().chain(&playlist_thumbs) {
                         t.ensure(id, cx);
                     }
                     for (id, url) in &avatars {
@@ -68,6 +76,7 @@ impl SearchPage {
             cx.observe(&stores.thumbs, |_, _, cx| cx.notify()),
             cx.observe(&stores.library, |_, _, cx| cx.notify()),
             cx.observe(&stores.channels, |_, _, cx| cx.notify()),
+            cx.observe(&stores.playlists, |_, _, cx| cx.notify()),
             cx.observe(&stores.player, |_, _, cx| cx.notify()),
         ];
         // Typing starts right away.
@@ -78,6 +87,7 @@ impl SearchPage {
             input,
             video_scroll: SmoothScroll::new(),
             channel_scroll: SmoothScroll::new(),
+            playlist_scroll: SmoothScroll::new(),
             _subs: subs,
         }
     }
@@ -85,6 +95,7 @@ impl SearchPage {
     fn submit(&mut self, cx: &mut Context<Self>) {
         self.video_scroll.reset();
         self.channel_scroll.reset();
+        self.playlist_scroll.reset();
         let query = self.input.read(cx).value().to_string();
         let (bin, limit) = {
             let p = &self.stores.prefs.read(cx).prefs;
@@ -107,6 +118,103 @@ impl SearchPage {
             cx.stop_propagation();
             cx.notify();
         }
+    }
+
+    fn on_playlist_wheel(&mut self, ev: &ScrollWheelEvent, cx: &mut Context<Self>) {
+        if self.playlist_scroll.on_wheel(ev) {
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn playlist_rows(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let playlists = self.stores.search.read(cx).playlists.clone();
+        playlists
+            .into_iter()
+            .enumerate()
+            .map(|(ix, playlist)| {
+                let thumb = self.stores.thumbs.read(cx).get(&playlist.thumb_id);
+                let favorite = self.stores.playlists.read(cx).is_favorite(&playlist.id);
+                let (open, toggle) = (playlist.clone(), playlist.clone());
+                div()
+                    .id(("playlist-row", ix))
+                    .flex()
+                    .items_center()
+                    .gap(px(12.0))
+                    .h(px(64.0))
+                    .px(px(10.0))
+                    .rounded(px(8.0))
+                    .hover(|s| s.bg(theme::bg_row_hover()))
+                    .child(
+                        div()
+                            .id(("playlist-open", ix))
+                            .flex()
+                            .flex_1()
+                            .min_w_0()
+                            .items_center()
+                            .gap(px(12.0))
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |_, _, _, cx| {
+                                cx.emit(Navigate(Route::Playlist(open.clone())))
+                            }))
+                            .child(thumbnail(thumb, 96.0, 54.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .truncate()
+                                            .text_size(px(14.0))
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .child(playlist.title.clone()),
+                                    )
+                                    .child(
+                                        div()
+                                            .truncate()
+                                            .text_size(px(12.0))
+                                            .text_color(theme::text_muted())
+                                            .child(playlist.owner.clone()),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id(("playlist-fav", ix))
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .size(px(32.0))
+                            .rounded_full()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme::hover()))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.stores
+                                    .playlists
+                                    .update(cx, |p, cx| p.toggle(&toggle, cx));
+                            }))
+                            .child(
+                                icon(
+                                    if favorite {
+                                        Icon::Heart
+                                    } else {
+                                        Icon::HeartOutline
+                                    },
+                                    px(18.0),
+                                )
+                                .text_color(if favorite {
+                                    theme::accent()
+                                } else {
+                                    theme::text_muted()
+                                }),
+                            ),
+                    )
+                    .into_any_element()
+            })
+            .collect()
     }
 
     fn channel_rows(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
@@ -230,17 +338,25 @@ impl Render for SearchPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.video_scroll.step(window);
         self.channel_scroll.step(window);
+        self.playlist_scroll.step(window);
         let search = self.stores.search.read(cx);
         let mode = search.mode;
         let results = search.results.clone();
         let loading = search.loading;
         let channel_mode = mode == SearchMode::Channels;
         let searched = search.searched;
+        let playlist_mode = mode == SearchMode::Playlists;
         let channel_count = search.channels.len();
+        let playlist_count = search.playlists.len();
         let playing_id = self.stores.player.read(cx).current().map(|t| t.id.clone());
 
         let channel_rows = if channel_mode {
             self.channel_rows(cx)
+        } else {
+            Vec::new()
+        };
+        let playlist_rows = if playlist_mode {
+            self.playlist_rows(cx)
         } else {
             Vec::new()
         };
@@ -305,6 +421,19 @@ impl Render for SearchPage {
                 .gap(px(2.0))
                 .children(channel_rows)
                 .into_any_element()
+        } else if playlist_mode && !loading && searched && playlist_count > 0 {
+            div()
+                .id("playlist-results")
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .track_scroll(&self.playlist_scroll.handle)
+                .on_scroll_wheel(cx.listener(|this, ev, _, cx| this.on_playlist_wheel(ev, cx)))
+                .gap(px(2.0))
+                .children(playlist_rows)
+                .into_any_element()
         } else if loading {
             spinner_fill().into_any_element()
         } else if !searched {
@@ -331,6 +460,8 @@ impl Render for SearchPage {
                 .into_any_element()
         } else if channel_mode {
             message("No channels found").into_any_element()
+        } else if playlist_mode {
+            message("No playlists found").into_any_element()
         } else if rows.is_empty() {
             message("No results").into_any_element()
         } else {
@@ -387,14 +518,17 @@ impl Render for SearchPage {
                             .child(icon(Icon::Search, px(18.0)).text_color(theme::text_muted()))
                             .child(self.input.clone()),
                     )
-                    .when(!channel_mode && !results.is_empty(), |s| {
-                        s.child(button(
-                            "search-play-all",
-                            "Play all",
-                            ButtonVariant::Classic,
-                            play_all,
-                        ))
-                    }),
+                    .when(
+                        !channel_mode && !playlist_mode && !results.is_empty(),
+                        |s| {
+                            s.child(button(
+                                "search-play-all",
+                                "Play all",
+                                ButtonVariant::Classic,
+                                play_all,
+                            ))
+                        },
+                    ),
             )
             .child(
                 div()
@@ -405,6 +539,13 @@ impl Render for SearchPage {
                         "mode-channels",
                         "Channels",
                         SearchMode::Channels,
+                        mode,
+                        cx,
+                    ))
+                    .child(self.mode_chip(
+                        "mode-playlists",
+                        "Playlists",
+                        SearchMode::Playlists,
                         mode,
                         cx,
                     )),
