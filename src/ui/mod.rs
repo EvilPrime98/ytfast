@@ -4,6 +4,8 @@ pub mod app_loader;
 pub mod components;
 pub mod confirm;
 pub mod icons;
+#[cfg(windows)]
+pub mod mini_player;
 pub mod pages;
 pub mod shell;
 pub mod theme;

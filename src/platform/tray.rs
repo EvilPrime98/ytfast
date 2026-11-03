@@ -1,5 +1,6 @@
-//! Windows tray icon so the app keeps playing after its window is closed. Left click or "Open"
-//! brings the window back, "Quit" exits. Other platforms keep the quit-on-last-window-close rule.
+//! Windows tray icon so the app keeps playing after its window is closed. A left click toggles the
+//! mini player, "Open" in the right-click menu brings the window back and "Quit" exits. Other
+//! platforms keep the quit-on-last-window-close rule.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -20,7 +21,7 @@ pub fn shown() -> bool {
 
 /// Creates the icon and starts polling its events. When the tray is unavailable `shown()` stays
 /// false, so closing the window still quits (otherwise the app would be unreachable).
-pub fn init(cx: &mut App, show_window: fn(&mut App)) {
+pub fn init(cx: &mut App, show_window: fn(&mut App), toggle_popup: fn(&mut App, i32, i32)) {
     let open = MenuItem::new("Open YTFast", true, None);
     let quit = MenuItem::new("Quit", true, None);
     let menu = Menu::new();
@@ -53,7 +54,7 @@ pub fn init(cx: &mut App, show_window: fn(&mut App)) {
         let _tray = tray;
         loop {
             cx.background_executor()
-                .timer(Duration::from_millis(150))
+                .timer(Duration::from_millis(30))
                 .await;
             while let Ok(ev) = MenuEvent::receiver().try_recv() {
                 if ev.id == quit_id {
@@ -66,10 +67,11 @@ pub fn init(cx: &mut App, show_window: fn(&mut App)) {
                 if let TrayIconEvent::Click {
                     button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
+                    position,
                     ..
                 } = ev
                 {
-                    cx.update(show_window);
+                    cx.update(|cx| toggle_popup(cx, position.x as i32, position.y as i32));
                 }
             }
         }

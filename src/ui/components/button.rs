@@ -58,7 +58,16 @@ fn styled_button(
         .whitespace_nowrap()
         .cursor_pointer()
         .on_click(on_click)
-        .children(glyph.map(|g| icon(g, px(16.0))))
+        .group("button")
+        .children(glyph.map(|g| {
+            let glyph = icon(g, px(16.0)).id("glyph");
+            match variant {
+                ButtonVariant::Classic => glyph
+                    .text_color(theme::accent())
+                    .group_hover("button", |s| s.text_color(theme::on_accent())),
+                ButtonVariant::Secondary => glyph.text_color(rgb(0xf2f2f2)),
+            }
+        }))
         .child(label.into());
     match variant {
         ButtonVariant::Classic => base

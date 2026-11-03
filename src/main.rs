@@ -68,7 +68,7 @@ fn main() {
             cx.set_global(stores);
 
             #[cfg(windows)]
-            platform::tray::init(cx, show_main_window);
+            platform::tray::init(cx, show_main_window, ui::mini_player::toggle);
 
             // GPUI's default quits on the last window closing everywhere but macOS, which would
             // pre-empt the check below; quitting is decided here instead.
@@ -108,7 +108,20 @@ fn main() {
 
 /// Focuses the existing window, or opens a new one if it was closed to the tray.
 fn show_main_window(cx: &mut App) {
-    if let Some(window) = cx.windows().first().copied() {
+    #[cfg(windows)]
+    ui::mini_player::close(cx);
+    let main = cx.windows().into_iter().find(|w| {
+        #[cfg(windows)]
+        {
+            !ui::mini_player::is_popup(cx, *w)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = w;
+            true
+        }
+    });
+    if let Some(window) = main {
         window
             .update(cx, |_, window, _| {
                 #[cfg(windows)]
