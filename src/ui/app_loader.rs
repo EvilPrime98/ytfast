@@ -1,14 +1,16 @@
-//! `AppLoader`: full-window splash while the startup sequence runs. The spinner is a pulsing ring.
+//! `AppLoader`: full-window splash while the startup sequence runs. The play icon spins as the loading indicator.
 
 use std::time::Duration;
 
 use gpui::{
     Animation, AnimationExt as _, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, ease_in_out, px, rgb,
+    Styled, Transformation, div, percentage, px, rgb,
 };
 
-use crate::ui::shell::header::logo;
+use crate::ui::icons::{Icon, icon};
 use crate::ui::theme;
+
+const LOGO_SIZE: f32 = 88.0;
 
 pub fn app_loader(message: impl Into<SharedString>) -> impl IntoElement {
     div()
@@ -23,13 +25,22 @@ pub fn app_loader(message: impl Into<SharedString>) -> impl IntoElement {
         .gap(px(14.0))
         .bg(theme::bg_chrome())
         .child(
-            div().child(logo(88.0)).with_animation(
-                "loader-pulse",
-                Animation::new(Duration::from_millis(1800))
-                    .repeat()
-                    .with_easing(ease_in_out),
-                |el, t| el.opacity(1.0 - 0.15 * (1.0 - (2.0 * t - 1.0).abs())),
-            ),
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .size(px(LOGO_SIZE))
+                .rounded_full()
+                .bg(theme::accent())
+                .child(
+                    icon(Icon::Play, px(LOGO_SIZE * 0.62))
+                        .text_color(theme::on_accent())
+                        .with_animation(
+                            "loader-spin",
+                            Animation::new(Duration::from_millis(1200)).repeat(),
+                            |el, t| el.with_transformation(Transformation::rotate(percentage(t))),
+                        ),
+                ),
         )
         .child(
             div()
@@ -43,18 +54,6 @@ pub fn app_loader(message: impl Into<SharedString>) -> impl IntoElement {
         .child(
             div()
                 .mt(px(8.0))
-                .size(px(26.0))
-                .rounded_full()
-                .border_3()
-                .border_color(theme::accent())
-                .with_animation(
-                    "loader-ring",
-                    Animation::new(Duration::from_millis(900)).repeat(),
-                    |el, t| el.opacity(0.5 + 0.5 * (t * std::f32::consts::TAU).sin().abs()),
-                ),
-        )
-        .child(
-            div()
                 .text_size(px(13.0))
                 .text_color(rgb(0x8f8f8f))
                 .child(message.into()),
