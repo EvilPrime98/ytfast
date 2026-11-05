@@ -1,19 +1,16 @@
-use std::cell::Cell;
 use std::ptr::null_mut;
 
 use windows_sys::Win32::Foundation::{HWND, POINT};
-use windows_sys::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient};
+use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, GetCursorPos, GetForegroundWindow, HWND_TOP, SWP_NOACTIVATE,
-    SetWindowPos, WS_CLIPCHILDREN, WS_DISABLED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
-    WS_VISIBLE,
+    SetWindowPos, WS_CHILD, WS_CLIPCHILDREN, WS_DISABLED, WS_VISIBLE,
 };
 
 pub struct Surface {
     hwnd: HWND,
     parent: HWND,
-    placed: Cell<(i32, i32, i32, i32)>,
 }
 
 impl Surface {
@@ -22,10 +19,10 @@ impl Surface {
         let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
         let hwnd = unsafe {
             CreateWindowExW(
-                WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                0,
                 class.as_ptr(),
                 std::ptr::null(),
-                WS_POPUP | WS_VISIBLE | WS_DISABLED | WS_CLIPCHILDREN,
+                WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_CLIPCHILDREN,
                 0,
                 0,
                 1,
@@ -39,11 +36,7 @@ impl Surface {
         if hwnd.is_null() {
             return Err("could not create the video window".into());
         }
-        Ok(Self {
-            hwnd,
-            parent,
-            placed: Cell::new((0, 0, 0, 0)),
-        })
+        Ok(Self { hwnd, parent })
     }
 
     pub fn id(&self) -> isize {
@@ -51,23 +44,14 @@ impl Surface {
     }
 
     pub fn place(&self, x: i32, y: i32, width: i32, height: i32) {
-        let mut origin = POINT { x, y };
-        if unsafe { ClientToScreen(self.parent, &mut origin) } == 0 {
-            return;
-        }
-        let rect = (origin.x, origin.y, width.max(1), height.max(1));
-        if rect == self.placed.get() {
-            return;
-        }
-        self.placed.set(rect);
         unsafe {
             SetWindowPos(
                 self.hwnd,
                 HWND_TOP,
-                rect.0,
-                rect.1,
-                rect.2,
-                rect.3,
+                x,
+                y,
+                width.max(1),
+                height.max(1),
                 SWP_NOACTIVATE,
             );
         }
