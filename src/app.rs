@@ -11,6 +11,7 @@ use crate::api::ytdlp;
 use crate::route::{History, Navigate, ReplaceRoute, Route, window_title};
 use crate::runtime;
 use crate::state::Stores;
+use crate::state::player::OpenVideo;
 use crate::ui::app_loader::app_loader;
 use crate::ui::confirm::{self, ConfirmHost};
 use crate::ui::pages::channel::ChannelPage;
@@ -24,6 +25,7 @@ use crate::ui::pages::playlists::PlaylistsPage;
 use crate::ui::pages::search::SearchPage;
 use crate::ui::pages::settings::SettingsPage;
 use crate::ui::pages::subscriptions::SubscriptionsPage;
+use crate::ui::pages::video::VideoPage;
 use crate::ui::shell::header::header;
 use crate::ui::shell::player_bar::PlayerBar;
 use crate::ui::shell::sidebar::Sidebar;
@@ -37,6 +39,7 @@ actions!(
         Forward,
         ToggleFullscreen,
         RequestClose,
+        ExitFullscreen,
         TogglePlay,
         NextTrack,
         PreviousTrack
@@ -52,6 +55,7 @@ pub fn bind_keys(cx: &mut App) {
         #[cfg(target_os = "macos")]
         gpui::KeyBinding::new("ctrl-cmd-f", ToggleFullscreen, None),
         // Space must keep typing a space inside the search box.
+        gpui::KeyBinding::new("escape", ExitFullscreen, Some("AppRoot && !TextInput")),
         gpui::KeyBinding::new("space", TogglePlay, Some("AppRoot && !TextInput")),
         gpui::KeyBinding::new("ctrl-right", NextTrack, None),
         gpui::KeyBinding::new("ctrl-left", PreviousTrack, None),
@@ -63,6 +67,7 @@ enum Page {
     Home(Entity<HomePage>),
     Search(Entity<SearchPage>),
     NowPlaying(Entity<NowPlayingPage>),
+    Video(Entity<VideoPage>),
     Library(Entity<LibraryPage>),
     History(Entity<HistoryPage>),
     Channels(Entity<ChannelsPage>),
@@ -110,6 +115,11 @@ impl AppRoot {
                 this.navigate(ev.0.clone(), window, cx)
             }),
             cx.observe(&stores.prefs, |_, _, cx| cx.notify()),
+            cx.subscribe_in(
+                &stores.player,
+                window,
+                |this, _, _: &OpenVideo, window, cx| this.navigate(Route::Video, window, cx),
+            ),
         ];
 
         let home = cx.new(|cx| HomePage::new(stores.clone(), cx));
@@ -267,6 +277,17 @@ impl AppRoot {
                 ));
                 Page::NowPlaying(page)
             }
+            Route::Video => {
+                let page = cx.new(|cx| VideoPage::new(self.stores.clone(), window, cx));
+                self._page_subs.push(cx.subscribe_in(
+                    &page,
+                    window,
+                    |this, _, ev: &Navigate, window, cx| this.navigate(ev.0.clone(), window, cx),
+                ));
+                self._page_subs
+                    .push(cx.observe(&page, |_, _, cx| cx.notify()));
+                Page::Video(page)
+            }
             Route::Library => Page::Library(cx.new(|cx| LibraryPage::new(self.stores.clone(), cx))),
             Route::History => Page::History(cx.new(|cx| HistoryPage::new(self.stores.clone(), cx))),
             Route::Settings => {
@@ -295,12 +316,14 @@ impl Render for AppRoot {
                 self.navigate(route, window, cx);
             }
         }
+        let immersive = window.is_fullscreen() && matches!(self.page, Page::Video(_));
         let sidebar_collapsed = self.stores.prefs.read(cx).prefs.sidebar_collapsed;
 
         let content = match &self.page {
             Page::Home(page) => AnyView::from(page.clone()),
             Page::Search(page) => AnyView::from(page.clone()),
             Page::NowPlaying(page) => AnyView::from(page.clone()),
+            Page::Video(page) => AnyView::from(page.clone()),
             Page::Library(page) => AnyView::from(page.clone()),
             Page::History(page) => AnyView::from(page.clone()),
             Page::Channels(page) => AnyView::from(page.clone()),
@@ -318,6 +341,11 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &Back, window, cx| this.go_back(window, cx)))
             .on_action(cx.listener(|this, _: &Forward, window, cx| this.go_forward(window, cx)))
             .on_action(cx.listener(|_, _: &ToggleFullscreen, window, _| window.toggle_fullscreen()))
+            .on_action(cx.listener(|_, _: &ExitFullscreen, window, _| {
+                if window.is_fullscreen() {
+                    window.toggle_fullscreen();
+                }
+            }))
             .on_action(cx.listener(|this, _: &TogglePlay, _, cx| {
                 this.stores.player.update(cx, |p, cx| p.toggle(cx))
             }))
@@ -344,16 +372,18 @@ impl Render for AppRoot {
             .text_size(px(14.0))
             .text_color(theme::text())
             .bg(theme::bg_app())
-            .child(header(window, cx))
+            .when(!immersive, |s| s.child(header(window, cx)))
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .when(!sidebar_collapsed, |s| s.child(self.sidebar.clone()))
+                    .when(!sidebar_collapsed && !immersive, |s| {
+                        s.child(self.sidebar.clone())
+                    })
                     .child(content),
             )
-            .child(self.player_bar.clone())
+            .when(!immersive, |s| s.child(self.player_bar.clone()))
             .child(self.toasts.clone())
             .child(self.confirm.clone())
             .when(self.loading, |s| s.child(app_loader("Checking yt-dlp…")))
@@ -366,6 +396,7 @@ fn dev_route() -> Option<Route> {
         "home" => Route::Home,
         "search" => Route::Search,
         "now-playing" => Route::NowPlaying,
+        "video" => Route::Video,
         "library" => Route::Library,
         "history" => Route::History,
         "channels" => Route::Channels,

@@ -1,7 +1,7 @@
 YTFast
 ======
 
-YTFast plays the audio of YouTube videos. It does not include yt-dlp: install it
+YTFast plays YouTube videos and their audio. It does not include yt-dlp: install it
 separately (https://github.com/yt-dlp/yt-dlp) and make sure it is on PATH, or set
 its location in Settings. Use it in line with YouTube's terms of service and the
 copyright rules where you live.
@@ -10,5 +10,10 @@ Third-party components
 ----------------------
 - Geist and Geist Mono fonts, (c) Vercel, licensed under the SIL Open Font
   License 1.1 (see assets/fonts/OFL.txt).
+- libmpv (mpv, https://mpv.io), bundled on Windows as libmpv-2.dll for video playback.
+  Built by https://github.com/shinchiro/mpv-winbuild-cmake and licensed under the GNU
+  GPL v2 or later (the build includes FFmpeg and other libraries under the GPL/LGPL).
+  Source code: https://github.com/mpv-player/mpv and the build scripts above. You may
+  replace the DLL with another libmpv build, or set its path in Settings.
 - GPUI (gpui-ce), rodio, symphonia, reqwest, tokio and the other Rust crates
   listed in Cargo.lock, under their respective open-source licenses.

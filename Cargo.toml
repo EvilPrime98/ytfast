@@ -26,12 +26,13 @@ tracing-appender = "0.2"
 open = "5"
 rand = "0.10"
 notify-rust = "4"
+libloading = "0.8"
 rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-aac", "symphonia-isomp4", "symphonia-mp3", "symphonia-vorbis", "symphonia-flac", "symphonia-wav"] }
 
 [target.'cfg(windows)'.dependencies]
 tray-icon = { version = "0.21", default-features = false }
 raw-window-handle = "0.6"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse"] }
 
 [build-dependencies]
 winresource = "0.1"
