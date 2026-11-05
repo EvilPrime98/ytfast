@@ -1,10 +1,13 @@
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::ColorExt as _;
 use gpui::{
     AnyWindowHandle, App, AppContext, Bounds, Context, Global, InteractiveElement, IntoElement,
-    ParentElement, Render, StatefulInteractiveElement, Styled, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowKind, WindowOptions, div, point, px, relative, size,
+    MouseButton, MouseDownEvent, ParentElement, Pixels, Render, StatefulInteractiveElement, Styled,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, px,
+    relative, size,
 };
 
 use crate::model::format_duration;
@@ -14,10 +17,11 @@ use crate::state::player::PlayState;
 use crate::ui::components::track_row::thumbnail;
 use crate::ui::icons::{Icon, icon};
 use crate::ui::shell::header::logo;
+use crate::ui::shell::player_bar::{bar, fraction, volume_drag};
 use crate::ui::theme;
 
 const WIDTH: f32 = 320.0;
-const HEIGHT: f32 = 242.0;
+const HEIGHT: f32 = 272.0;
 
 const SETTLE: Duration = Duration::from_millis(8);
 
@@ -123,6 +127,8 @@ pub fn toggle(cx: &mut App, x: i32, y: i32) {
 
 struct MiniPlayer {
     stores: Stores,
+    volume_bounds: Rc<Cell<Bounds<Pixels>>>,
+    volume_dragging: Rc<Cell<bool>>,
 }
 
 impl MiniPlayer {
@@ -140,7 +146,11 @@ impl MiniPlayer {
             let id = track.id.clone();
             stores.thumbs.update(cx, |t, cx| t.ensure(&id, cx));
         }
-        Self { stores }
+        Self {
+            stores,
+            volume_bounds: Rc::default(),
+            volume_dragging: Rc::default(),
+        }
     }
 }
 
@@ -184,6 +194,9 @@ impl Render for MiniPlayer {
         };
         let play_enabled = has_track && state != PlayState::Loading;
         let stores = self.stores.clone();
+        let volume = player.volume;
+        let volume_bounds = self.volume_bounds.clone();
+        let volume_dragging = self.volume_dragging.clone();
 
         let position = player.position;
         let duration = player.duration;
@@ -370,6 +383,34 @@ impl Render for MiniPlayer {
                             }
                         }
                     })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(icon(Icon::Volume, px(18.0)).text_color(theme::text_muted()))
+                    .child(
+                        div()
+                            .relative()
+                            .flex_1()
+                            .flex()
+                            .child(volume_drag(
+                                volume_bounds.clone(),
+                                volume_dragging.clone(),
+                                stores.player.clone(),
+                            ))
+                            .child(
+                                bar("mini-volume", volume, volume_bounds.clone()).on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                                        volume_dragging.set(true);
+                                        let f = fraction(volume_bounds.get(), ev.position);
+                                        this.stores.player.update(cx, |p, cx| p.set_volume(f, cx));
+                                    }),
+                                ),
+                            ),
+                    ),
             )
     }
 }

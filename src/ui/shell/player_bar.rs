@@ -51,7 +51,7 @@ impl PlayerBar {
     }
 }
 
-fn fraction(bounds: Bounds<Pixels>, position: Point<Pixels>) -> f32 {
+pub(crate) fn fraction(bounds: Bounds<Pixels>, position: Point<Pixels>) -> f32 {
     let width = f32::from(bounds.size.width);
     if width <= 0.0 {
         return 0.0;
@@ -61,7 +61,7 @@ fn fraction(bounds: Bounds<Pixels>, position: Point<Pixels>) -> f32 {
 
 /// While `dragging` is set, follows the mouse anywhere in the window (not just over the bar)
 /// and writes the position under it to the volume; releasing the button ends the drag.
-fn volume_drag(
+pub(crate) fn volume_drag(
     bounds: Rc<Cell<Bounds<Pixels>>>,
     dragging: Rc<Cell<bool>>,
     player: Entity<PlayerStore>,
@@ -91,7 +91,7 @@ fn volume_drag(
 }
 
 /// A clickable horizontal bar filled to `filled` (0..=1). `bounds` is refreshed every frame.
-fn bar(
+pub(crate) fn bar(
     id: &'static str,
     filled: f32,
     bounds: Rc<Cell<Bounds<Pixels>>>,
