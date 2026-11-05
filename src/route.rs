@@ -18,7 +18,6 @@ pub enum Route {
     Search,
     /// The queue and the current track, large.
     NowPlaying,
-    Video,
     /// Saved tracks.
     Library,
     History,
@@ -41,7 +40,6 @@ impl Route {
             Self::Home => "Home",
             Self::Search => "Search",
             Self::NowPlaying => "Now playing",
-            Self::Video => "Video",
             Self::Library => "Library",
             Self::History => "History",
             Self::Channels => "Channels",

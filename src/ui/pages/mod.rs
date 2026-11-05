@@ -11,4 +11,3 @@ pub mod playlists;
 pub mod search;
 pub mod settings;
 pub mod subscriptions;
-pub mod video;

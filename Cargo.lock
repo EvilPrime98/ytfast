@@ -8727,7 +8727,6 @@ dependencies = [
  "gpui-ce",
  "gpui_ce_platform",
  "image",
- "libloading 0.8.9",
  "notify-rust",
  "open",
  "rand 0.10.3",
