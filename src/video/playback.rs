@@ -48,10 +48,8 @@ impl Playback {
     }
 
     pub fn place(&mut self, rect: (i32, i32, i32, i32)) {
-        if rect != self.rect {
-            self.rect = rect;
-            self.surface.place(rect.0, rect.1, rect.2, rect.3);
-        }
+        self.rect = rect;
+        self.surface.place(rect.0, rect.1, rect.2, rect.3);
     }
 
     pub fn drive(&mut self, playing: bool, clock: Duration, speed: f32) {
