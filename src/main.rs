@@ -11,7 +11,6 @@ mod route;
 mod runtime;
 mod state;
 mod ui;
-mod video;
 
 use gpui::{
     App, Bounds, QuitMode, TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, point,

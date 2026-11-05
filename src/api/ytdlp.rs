@@ -371,61 +371,14 @@ fn track_from_value(v: &Value) -> Option<Track> {
     })
 }
 
-/// The finished download whose file stem is `stem` (the bare id for audio).
-fn cached(dir: &Path, stem: &str) -> Option<PathBuf> {
+/// The cached file for `id`, if a finished download exists.
+fn cached(dir: &Path, id: &str) -> Option<PathBuf> {
     std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
         let p = e.path();
         let ext = p.extension()?.to_str()?;
         let done = !matches!(ext, "part" | "ytdl" | "temp");
-        (done && p.file_stem()?.to_str()? == stem).then_some(p)
+        (done && p.file_stem()?.to_str()? == id).then_some(p)
     })
-}
-
-fn video_stem(id: &str, height: u32) -> String {
-    format!("{id}.v{height}")
-}
-
-fn is_video_file(path: &Path) -> bool {
-    path.file_stem()
-        .and_then(|s| s.to_str())
-        .is_some_and(|s| s.len() > 11 && s[11..].starts_with(".v"))
-}
-
-pub async fn download_video(
-    bin: &str,
-    id: &str,
-    dir: &Path,
-    max_height: u32,
-) -> Result<PathBuf, YtError> {
-    let stem = video_stem(id, max_height);
-    if let Some(p) = cached(dir, &stem) {
-        return Ok(p);
-    }
-    std::fs::create_dir_all(dir).map_err(|e| YtError::Failed(e.to_string()))?;
-    let h = max_height;
-    let mut cmd = command(bin);
-    cmd.arg("-f")
-        .arg(format!(
-            "bestvideo[height<={h}][ext=mp4]/bestvideo[height<={h}]/best[height<={h}]"
-        ))
-        .args(["--no-playlist", "--no-warnings", "--quiet", "-o"])
-        .arg(dir.join(format!("{stem}.%(ext)s")))
-        .arg(format!("https://www.youtube.com/watch?v={id}"));
-    run(cmd).await?;
-    cached(dir, &stem).ok_or_else(|| YtError::Failed("the download left no video file".into()))
-}
-
-pub async fn description(bin: &str, id: &str) -> Result<String, YtError> {
-    let mut cmd = command(bin);
-    cmd.args([
-        "--no-playlist",
-        "--skip-download",
-        "--no-warnings",
-        "--print",
-        "description",
-    ])
-    .arg(format!("https://www.youtube.com/watch?v={id}"));
-    Ok(run(cmd).await?.trim().to_string())
 }
 
 const PROGRESS_TEMPLATE: &str = "download:%(progress.tmpfilename)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s";
@@ -593,8 +546,7 @@ fn parse_progress(line: &str) -> Option<(PathBuf, u64, Option<u64>)> {
     Some((PathBuf::from(part), downloaded, total.or(estimate)))
 }
 
-/// Delete cached files until the folder is under `max_bytes`: videos first, oldest first, then
-/// audio.
+/// Delete the oldest cached files until the folder is under `max_bytes`.
 pub fn prune_cache(dir: &Path, max_bytes: u64) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
@@ -603,18 +555,12 @@ pub fn prune_cache(dir: &Path, max_bytes: u64) {
         .flatten()
         .filter_map(|e| {
             let meta = e.metadata().ok()?;
-            let path = e.path();
-            Some((
-                !is_video_file(&path),
-                meta.modified().ok()?,
-                meta.len(),
-                path,
-            ))
+            Some((meta.modified().ok()?, meta.len(), e.path()))
         })
         .collect();
-    let mut total: u64 = files.iter().map(|f| f.2).sum();
+    let mut total: u64 = files.iter().map(|f| f.1).sum();
     files.sort();
-    for (_, _, len, path) in files {
+    for (_, len, path) in files {
         if total <= max_bytes {
             break;
         }
@@ -646,29 +592,6 @@ pub fn cache_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn video_files_are_told_apart_from_audio() {
-        assert!(is_video_file(Path::new("dQw4w9WgXcQ.v720.mp4")));
-        assert!(!is_video_file(Path::new("dQw4w9WgXcQ.m4a")));
-        assert_eq!(video_stem("dQw4w9WgXcQ", 480), "dQw4w9WgXcQ.v480");
-    }
-
-    #[test]
-    fn prune_evicts_video_before_audio() {
-        let dir = std::env::temp_dir().join(format!("ytfast-prune-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let audio = dir.join("aaaaaaaaaaa.m4a");
-        let video = dir.join("aaaaaaaaaaa.v720.mp4");
-        std::fs::write(&video, [0u8; 100]).unwrap();
-        std::fs::write(&audio, [0u8; 100]).unwrap();
-        prune_cache(&dir, 100);
-        assert!(audio.exists());
-        assert!(!video.exists());
-        prune_cache(&dir, 0);
-        assert!(!audio.exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 
     #[test]
     fn parses_search_results() {

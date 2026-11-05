@@ -23,7 +23,6 @@ impl Sidebar {
         cx.observe(&stores.library, |_, _, cx| cx.notify()).detach();
         cx.observe(&stores.channels, |_, _, cx| cx.notify())
             .detach();
-        cx.observe(&stores.prefs, |_, _, cx| cx.notify()).detach();
         Self {
             stores,
             current: Route::home(),
@@ -35,8 +34,7 @@ impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let saved = self.stores.library.read(cx).tracks.len();
         let new_videos = self.stores.channels.read(cx).unseen_total();
-        let video_mode = self.stores.prefs.read(cx).prefs.video_mode;
-        let mut entries: Vec<(Route, Icon, String)> = vec![
+        let entries: [(Route, Icon, String); 9] = [
             (Route::Home, Icon::Music, "Home".into()),
             (Route::Search, Icon::Search, "Search".into()),
             (Route::Subscriptions, Icon::Play, "My Feed".into()),
@@ -63,9 +61,6 @@ impl Render for Sidebar {
             (Route::Playlists, Icon::Playlist, "Playlists".into()),
             (Route::Settings, Icon::Gear, "Settings".into()),
         ];
-        if video_mode {
-            entries.insert(4, (Route::Video, Icon::Play, "Video".into()));
-        }
         div()
             .flex()
             .flex_col()

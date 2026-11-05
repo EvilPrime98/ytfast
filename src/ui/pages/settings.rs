@@ -13,14 +13,11 @@ use crate::ui::components::checkbox::checkbox;
 use crate::ui::components::dropdown::dropdown;
 use crate::ui::components::text_input::{TextInput, TextInputEvent};
 use crate::ui::confirm::{self, ConfirmOptions};
-use crate::ui::pages::video::HEIGHTS;
 use crate::ui::{theme, toast};
-use crate::video;
 
 pub struct SettingsPage {
     stores: Stores,
     path_input: Entity<TextInput>,
-    libmpv_input: Entity<TextInput>,
     /// Size of the audio cache, once measured.
     cache_bytes: Option<u64>,
     _subs: Vec<Subscription>,
@@ -30,16 +27,8 @@ impl SettingsPage {
     pub fn new(stores: Stores, cx: &mut Context<Self>) -> Self {
         let path = stores.prefs.read(cx).prefs.ytdlp_path.clone();
         let path_input = cx.new(|cx| TextInput::new("yt-dlp (found on PATH)", cx).with_value(path));
-        let libmpv = stores.prefs.read(cx).prefs.libmpv_path.clone();
-        let libmpv_input =
-            cx.new(|cx| TextInput::new("libmpv-2.dll (next to the app)", cx).with_value(libmpv));
         let subs = vec![
             cx.observe(&stores.prefs, |_, _, cx| cx.notify()),
-            cx.subscribe(&libmpv_input, |this, _, ev: &TextInputEvent, cx| {
-                if matches!(ev, TextInputEvent::Submit) {
-                    this.save_libmpv(cx);
-                }
-            }),
             cx.subscribe(&path_input, |this, _, ev: &TextInputEvent, cx| {
                 if matches!(ev, TextInputEvent::Submit) {
                     this.save_path(cx);
@@ -49,7 +38,6 @@ impl SettingsPage {
         let mut this = Self {
             stores,
             path_input,
-            libmpv_input,
             cache_bytes: None,
             _subs: subs,
         };
@@ -84,28 +72,13 @@ impl SettingsPage {
         .detach();
     }
 
-    fn save_libmpv(&mut self, cx: &mut Context<Self>) {
-        let path = self.libmpv_input.read(cx).value().trim().to_string();
-        self.stores
-            .prefs
-            .update(cx, |p, cx| p.update(cx, |p| p.libmpv_path = path.clone()));
-        cx.spawn(async move |_, cx| {
-            let result = runtime::run(async move { video::check(&path) }).await;
-            cx.update(|cx| match result {
-                Ok(v) => toast::success(cx, format!("{v} is ready")),
-                Err(e) => toast::error(cx, e),
-            });
-        })
-        .detach();
-    }
-
     fn clear_cache(&mut self, cx: &mut Context<Self>) {
         let me = cx.entity();
         confirm::ask(
             cx,
             ConfirmOptions::new(
-                "Clear the cache?",
-                "Downloaded audio and video is deleted. Tracks are downloaded again when played.",
+                "Clear the audio cache?",
+                "Downloaded audio is deleted. Tracks are downloaded again when played.",
             )
             .labels("Clear", "Cancel"),
             move |answer, _, cx| {
@@ -155,52 +128,10 @@ impl Render for SettingsPage {
             .into_iter()
             .map(|n| (n, format!("{n} results").into()))
             .collect();
-        let cache_options: Vec<(u64, SharedString)> = [256u64, 1024, 4096, 8192]
+        let cache_options: Vec<(u64, SharedString)> = [256u64, 1024, 4096]
             .into_iter()
             .map(|mb| (mb, format!("{} MB", mb).into()))
             .collect();
-
-        let video_mode = {
-            let s = prefs_store.clone();
-            checkbox(
-                "set-video-mode",
-                "Play videos in the app",
-                prefs.video_mode,
-                move |on, _, cx| {
-                    if !on {
-                        s.update(cx, |p, cx| p.update(cx, |p| p.video_mode = false));
-                        return;
-                    }
-                    let bin = s.read(cx).prefs.libmpv_path.clone();
-                    let s = s.clone();
-                    cx.spawn(async move |cx| {
-                        let result = runtime::run(async move { video::check(&bin) }).await;
-                        cx.update(|cx| match result {
-                            Ok(_) => s.update(cx, |p, cx| p.update(cx, |p| p.video_mode = true)),
-                            Err(e) => toast::error(cx, e),
-                        });
-                    })
-                    .detach();
-                },
-            )
-        };
-
-        let height_options: Vec<(u32, SharedString)> = HEIGHTS
-            .into_iter()
-            .map(|h| (h, format!("{h}p").into()))
-            .collect();
-        let height_menu = {
-            let (open_s, select_s) = (prefs_store.clone(), prefs_store.clone());
-            dropdown(
-                "set-video-height",
-                height_options,
-                prefs.video_max_height,
-                open == Some("set-video-height"),
-                false,
-                move |o, cx| open_s.update(cx, |p, cx| p.set_menu_open("set-video-height", o, cx)),
-                move |v, cx| select_s.update(cx, |p, cx| p.update(cx, |p| p.video_max_height = v)),
-            )
-        };
 
         let autoplay = {
             let s = prefs_store.clone();
@@ -343,52 +274,6 @@ impl Render for SettingsPage {
                             )),
                     ),
             ))
-            .child(section(
-                "Video",
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.0))
-                    .child(video_mode)
-                    .child(
-                        div()
-                            .text_size(px(12.0))
-                            .text_color(theme::text_muted())
-                            .child("Needs libmpv. Full path to libmpv-2.dll (or its folder), or leave empty to use the one next to the app."),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_1()
-                                    .h(px(36.0))
-                                    .px(px(12.0))
-                                    .rounded(px(6.0))
-                                    .bg(theme::bg_panel())
-                                    .border_1()
-                                    .border_color(theme::border_subtle())
-                                    .child(self.libmpv_input.clone()),
-                            )
-                            .child(button(
-                                "set-save-libmpv",
-                                "Save & check",
-                                ButtonVariant::Classic,
-                                cx.listener(|this, _, _, cx| this.save_libmpv(cx)),
-                            )),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(12.0))
-                            .child(div().text_size(px(13.0)).child("Download up to"))
-                            .child(height_menu),
-                    ),
-            ))
             .child(section("Playback", autoplay))
             .child(section("Background", background))
             .child(section(
@@ -417,7 +302,7 @@ impl Render for SettingsPage {
                     .child(limit_menu),
             ))
             .child(section(
-                "Cache",
+                "Audio cache",
                 div()
                     .flex()
                     .flex_col()
