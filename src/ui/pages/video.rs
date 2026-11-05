@@ -1,13 +1,12 @@
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Bounds, Context, Corners, EventEmitter, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Render, RenderImage,
-    StatefulInteractiveElement, Styled, Subscription, Window, canvas, div, prelude::*, px, rgba,
+    Bounds, Context, EventEmitter, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
+    MouseMoveEvent, ParentElement, Pixels, Render, StatefulInteractiveElement, Styled,
+    Subscription, Window, canvas, div, prelude::*, px, rgba,
 };
 
 use crate::api::ytdlp;
@@ -28,19 +27,6 @@ pub const HEIGHTS: [u32; 4] = [360, 480, 720, 1080];
 
 const CONTROLS_HIDE_AFTER: Duration = Duration::from_secs(3);
 
-#[derive(Default)]
-struct FrameSlot {
-    current: Option<Arc<RenderImage>>,
-    retired: Vec<Arc<RenderImage>>,
-}
-
-impl FrameSlot {
-    fn show(&mut self, image: Option<Arc<RenderImage>>) {
-        self.retired
-            .extend(std::mem::replace(&mut self.current, image));
-    }
-}
-
 pub struct VideoPage {
     stores: Stores,
     playback: Option<Playback>,
@@ -51,7 +37,6 @@ pub struct VideoPage {
     clock_ref: (Duration, Instant),
     controls_shown: bool,
     screen_bounds: Rc<Cell<Bounds<Pixels>>>,
-    frame: Rc<RefCell<FrameSlot>>,
     seek_bounds: Rc<Cell<Bounds<Pixels>>>,
     _subs: Vec<Subscription>,
 }
@@ -83,17 +68,6 @@ impl VideoPage {
             }
         })
         .detach();
-        cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(8))
-                    .await;
-                if this.update(cx, |this, cx| this.pull_frame(cx)).is_err() {
-                    break;
-                }
-            }
-        })
-        .detach();
         let mut this = Self {
             stores,
             playback: None,
@@ -104,7 +78,6 @@ impl VideoPage {
             clock_ref: (Duration::ZERO, Instant::now()),
             controls_shown: true,
             screen_bounds: Rc::default(),
-            frame: Rc::default(),
             seek_bounds: Rc::default(),
             _subs: subs,
         };
@@ -154,19 +127,18 @@ impl VideoPage {
         .detach();
     }
 
-    fn screen_size(&self, window: &Window) -> Option<(u32, u32)> {
+    fn screen_rect(&self, window: &Window) -> Option<(i32, i32, i32, i32)> {
         let b = self.screen_bounds.get();
         let s = window.scale_factor();
         let (w, h) = (f32::from(b.size.width) * s, f32::from(b.size.height) * s);
-        (w >= 1.0 && h >= 1.0).then(|| (w.round() as u32, h.round() as u32))
-    }
-
-    fn pull_frame(&mut self, cx: &mut Context<Self>) {
-        let Some(image) = self.playback.as_mut().and_then(|pb| pb.take_frame()) else {
-            return;
-        };
-        self.frame.borrow_mut().show(Some(image));
-        cx.notify();
+        (w >= 1.0 && h >= 1.0).then(|| {
+            (
+                (f32::from(b.origin.x) * s).round() as i32,
+                (f32::from(b.origin.y) * s).round() as i32,
+                w.round() as i32,
+                h.round() as i32,
+            )
+        })
     }
 
     fn pump(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -191,7 +163,7 @@ impl VideoPage {
         } else {
             reported
         };
-        let rect = self.screen_size(window);
+        let rect = self.screen_rect(window);
 
         match video {
             VideoState::Ready(path) => {
@@ -209,14 +181,17 @@ impl VideoPage {
                             Ok(())
                         }
                         Some(pb) => pb.load(&path, clock, paused),
-                        None => Playback::new(&lib).and_then(|mut pb| {
-                            if let Some(r) = rect {
-                                pb.set_size(r);
-                            }
-                            pb.load(&path, clock, paused)?;
-                            self.playback = Some(pb);
-                            Ok(())
-                        }),
+                        None => crate::platform::native_handle(window)
+                            .ok_or_else(|| "no window to draw the video in".to_string())
+                            .and_then(|parent| Playback::new(&lib, parent))
+                            .and_then(|mut pb| {
+                                if let Some(r) = rect {
+                                    pb.place(r);
+                                }
+                                pb.load(&path, clock, paused)?;
+                                self.playback = Some(pb);
+                                Ok(())
+                            }),
                     };
                     if let Err(e) = &result {
                         tracing::warn!("video: {e}");
@@ -229,7 +204,6 @@ impl VideoPage {
             _ => {
                 if self.playback.is_some() || self.started.is_some() {
                     self.playback = None;
-                    self.frame.borrow_mut().show(None);
                     self.started = None;
                     self.play_error = None;
                     dirty = true;
@@ -237,14 +211,22 @@ impl VideoPage {
             }
         }
 
+        let mut activity = !window.is_fullscreen();
+        let mut toggle = false;
         if let Some(pb) = self.playback.as_mut() {
             if let Some(r) = rect {
-                pb.set_size(r);
+                pb.place(r);
             }
             pb.drive(state == PlayState::Playing, clock, speed);
+            let input = pb.poll_input();
+            activity |= input.moved;
+            toggle = input.clicked;
         }
-        if !window.is_fullscreen() {
+        if activity {
             self.last_activity = Instant::now();
+        }
+        if toggle {
+            self.stores.player.update(cx, |p, cx| p.toggle(cx));
         }
 
         let shown = !window.is_fullscreen()
@@ -377,7 +359,6 @@ impl Render for VideoPage {
         };
 
         let bounds = self.screen_bounds.clone();
-        let frame = self.frame.clone();
         let screen = div()
             .id("video-screen")
             .relative()
@@ -388,20 +369,9 @@ impl Render for VideoPage {
             .justify_center()
             .bg(gpui::black())
             .child(
-                canvas(
-                    move |b, _, _| bounds.set(b),
-                    move |b, _, window, _| {
-                        let mut slot = frame.borrow_mut();
-                        for old in slot.retired.drain(..) {
-                            let _ = window.drop_image(old);
-                        }
-                        if let Some(img) = slot.current.clone() {
-                            let _ = window.paint_image(b, b, Corners::default(), img, 0, false);
-                        }
-                    },
-                )
-                .absolute()
-                .size_full(),
+                canvas(move |b, _, _| bounds.set(b), |_, _, _, _| ())
+                    .absolute()
+                    .size_full(),
             )
             .when(self.playback.is_none(), |s| {
                 s.child(

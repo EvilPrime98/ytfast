@@ -1,35 +1,40 @@
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
 
-use gpui::RenderImage;
-use image::{Frame, RgbaImage};
-
-use super::Mpv;
-use super::render::Renderer;
+use super::{Mpv, Surface};
 
 const JUMP_DRIFT: f64 = 0.5;
 const DEAD_ZONE: f64 = 0.04;
 const MAX_TRIM: f64 = 0.05;
-const MAX_WIDTH: f32 = 1920.0;
-const MAX_HEIGHT: f32 = 1080.0;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Input {
+    pub moved: bool,
+    pub clicked: bool,
+}
 
 pub struct Playback {
-    renderer: Renderer,
     mpv: Mpv,
+    surface: Surface,
+    rect: (i32, i32, i32, i32),
     paused: Option<bool>,
     speed: f64,
+    cursor: Option<(i32, i32)>,
+    button_was_down: bool,
 }
 
 impl Playback {
-    pub fn new(lib_path: &str) -> Result<Self, String> {
-        let mpv = Mpv::new(lib_path)?;
-        let renderer = Renderer::new(&mpv)?;
+    pub fn new(lib_path: &str, parent: isize) -> Result<Self, String> {
+        let surface = Surface::new(parent)?;
+        let mpv = Mpv::new(lib_path, surface.id())?;
         Ok(Self {
-            renderer,
             mpv,
+            surface,
+            rect: (0, 0, 0, 0),
             paused: None,
             speed: 1.0,
+            cursor: None,
+            button_was_down: false,
         })
     }
 
@@ -42,18 +47,9 @@ impl Playback {
         self.mpv.seek(to);
     }
 
-    pub fn set_size(&mut self, (w, h): (u32, u32)) {
-        let scale = (MAX_WIDTH / w.max(1) as f32)
-            .min(MAX_HEIGHT / h.max(1) as f32)
-            .min(1.0);
-        let fit = |v: u32| (v as f32 * scale).round() as u32;
-        self.renderer.set_size((fit(w), fit(h)));
-    }
-
-    pub fn take_frame(&mut self) -> Option<Arc<RenderImage>> {
-        let f = self.renderer.take()?;
-        let img = RgbaImage::from_raw(f.width, f.height, f.bgra)?;
-        Some(Arc::new(RenderImage::new(vec![Frame::new(img)])))
+    pub fn place(&mut self, rect: (i32, i32, i32, i32)) {
+        self.rect = rect;
+        self.surface.place(rect.0, rect.1, rect.2, rect.3);
     }
 
     pub fn drive(&mut self, playing: bool, clock: Duration, speed: f32) {
@@ -74,6 +70,18 @@ impl Playback {
             self.speed = target;
             self.mpv.set_speed(target);
         }
+    }
+
+    pub fn poll_input(&mut self) -> Input {
+        let cursor = self.surface.cursor();
+        let moved = cursor.is_some() && cursor != self.cursor;
+        self.cursor = cursor;
+        let down = Surface::left_button_down();
+        let (x, y, w, h) = self.rect;
+        let over = cursor.is_some_and(|(cx, cy)| cx >= x && cx < x + w && cy >= y && cy < y + h);
+        let clicked = down && !self.button_was_down && over;
+        self.button_was_down = down;
+        Input { moved, clicked }
     }
 }
 

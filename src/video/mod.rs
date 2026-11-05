@@ -1,6 +1,5 @@
 use std::ffi::{CStr, CString, c_char, c_int, c_ulong, c_void};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 
 use libloading::Library;
@@ -8,7 +7,9 @@ use libloading::Library;
 #[cfg(windows)]
 mod playback;
 #[cfg(windows)]
-mod render;
+mod surface;
+#[cfg(windows)]
+use surface::Surface;
 
 #[cfg(windows)]
 pub use playback::Playback;
@@ -16,25 +17,28 @@ pub use playback::Playback;
 #[cfg(not(windows))]
 mod unsupported {
     use std::path::Path;
-    use std::sync::Arc;
     use std::time::Duration;
 
-    use gpui::RenderImage;
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct Input {
+        pub moved: bool,
+        pub clicked: bool,
+    }
 
     pub struct Playback;
 
     impl Playback {
-        pub fn new(_: &str) -> Result<Self, String> {
+        pub fn new(_: &str, _: isize) -> Result<Self, String> {
             Err("video mode is only available on Windows for now".into())
         }
         pub fn load(&mut self, _: &Path, _: Duration, _: bool) -> Result<(), String> {
             Ok(())
         }
         pub fn seek(&self, _: Duration) {}
-        pub fn set_size(&mut self, _: (u32, u32)) {}
+        pub fn place(&mut self, _: (i32, i32, i32, i32)) {}
         pub fn drive(&mut self, _: bool, _: Duration, _: f32) {}
-        pub fn take_frame(&mut self) -> Option<Arc<RenderImage>> {
-            None
+        pub fn poll_input(&mut self) -> Input {
+            Input::default()
         }
     }
 }
@@ -55,12 +59,6 @@ struct Api {
     destroy: unsafe extern "C" fn(Handle),
     error_string: unsafe extern "C" fn(c_int) -> *const c_char,
     api_version: unsafe extern "C" fn() -> c_ulong,
-    render_create: unsafe extern "C" fn(*mut Handle, Handle, *mut render::Param) -> c_int,
-    render_set_callback:
-        unsafe extern "C" fn(Handle, Option<extern "C" fn(*mut c_void)>, *mut c_void),
-    render_update: unsafe extern "C" fn(Handle) -> u64,
-    render: unsafe extern "C" fn(Handle, *mut render::Param) -> c_int,
-    render_free: unsafe extern "C" fn(Handle),
     _lib: Library,
 }
 
@@ -102,11 +100,6 @@ impl Api {
             destroy: sym!("mpv_terminate_destroy"),
             error_string: sym!("mpv_error_string"),
             api_version: sym!("mpv_client_api_version"),
-            render_create: sym!("mpv_render_context_create"),
-            render_set_callback: sym!("mpv_render_context_set_update_callback"),
-            render_update: sym!("mpv_render_context_update"),
-            render: sym!("mpv_render_context_render"),
-            render_free: sym!("mpv_render_context_free"),
             _lib: lib,
         })
     }
@@ -132,20 +125,20 @@ fn c(s: &str) -> Result<CString, String> {
 }
 
 pub struct Mpv {
-    api: Arc<Api>,
+    api: Api,
     handle: Handle,
 }
 
 impl Mpv {
-    pub fn new(lib_path: &str) -> Result<Self, String> {
-        let api = Arc::new(Api::load(lib_path)?);
+    pub fn new(lib_path: &str, wid: isize) -> Result<Self, String> {
+        let api = Api::load(lib_path)?;
         let handle = unsafe { (api.create)() };
         if handle.is_null() {
             return Err("libmpv could not be created".into());
         }
         let mpv = Self { api, handle };
         let options = [
-            ("vo", "libmpv".to_string()),
+            ("wid", wid.to_string()),
             ("terminal", "no".into()),
             ("config", "no".into()),
             ("load-scripts", "no".into()),
@@ -156,9 +149,10 @@ impl Mpv {
             ("input-vo-keyboard", "no".into()),
             ("cursor-autohide", "no".into()),
             ("aid", "no".into()),
-            ("hwdec", "auto-copy-safe".into()),
+            ("hwdec", "auto-safe".into()),
             ("keep-open", "yes".into()),
             ("idle", "yes".into()),
+            ("force-window", "yes".into()),
             ("hr-seek", "yes".into()),
         ];
         for (name, value) in options {
@@ -255,7 +249,7 @@ mod tests {
     fn mpv_loads_and_starts() {
         let path = std::env::var("YTFAST_LIBMPV").unwrap_or_default();
         assert!(check(&path).unwrap().starts_with("libmpv"));
-        let mpv = Mpv::new(&path).unwrap();
+        let mpv = Mpv::new(&path, 0).unwrap();
         assert!(mpv.time_pos().is_none());
     }
 }

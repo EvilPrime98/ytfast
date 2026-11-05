@@ -4,11 +4,6 @@
     "https://github.com/aiwithremy/claude-skills-llm-council"
   ],
   "skills": {
-    "domain-modeling": {
-      "repo": "https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling",
-      "ref": "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d",
-      "market": "skillsmp"
-    },
     "git-commit-doctor": "https://github.com/EvilPrime98/mySkills",
     "gpui-desktop": "https://github.com/EvilPrime98/mySkills",
     "graphify": "https://github.com/EvilPrime98/mySkills",
