@@ -23,6 +23,9 @@ pub struct Prefs {
     pub keep_running_in_background: bool,
     pub channel_notifications: bool,
     pub channel_poll_minutes: u64,
+    pub video_mode: bool,
+    pub video_max_height: u32,
+    pub libmpv_path: String,
 }
 
 impl Default for Prefs {
@@ -38,6 +41,9 @@ impl Default for Prefs {
             keep_running_in_background: true,
             channel_notifications: true,
             channel_poll_minutes: 30,
+            video_mode: false,
+            video_max_height: 720,
+            libmpv_path: String::new(),
         }
     }
 }
@@ -111,5 +117,7 @@ mod tests {
         assert!(p.autoplay_next);
         assert_eq!(p.search_limit, 15);
         assert!(p.ytdlp_path.is_empty());
+        assert!(!p.video_mode);
+        assert_eq!(p.video_max_height, 720);
     }
 }

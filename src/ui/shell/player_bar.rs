@@ -201,7 +201,14 @@ impl Render for PlayerBar {
                     .flex_none()
                     .min_w_0()
                     .cursor_pointer()
-                    .on_click(cx.listener(|_, _, _, cx| cx.emit(Navigate(Route::NowPlaying))))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let video = this.stores.prefs.read(cx).prefs.video_mode;
+                        cx.emit(Navigate(if video {
+                            Route::Video
+                        } else {
+                            Route::NowPlaying
+                        }))
+                    }))
                     .child(thumbnail(thumb, 80.0, 45.0))
                     .child(
                         div()
