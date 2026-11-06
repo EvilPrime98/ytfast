@@ -10,13 +10,14 @@ use crate::runtime;
 use crate::state::Stores;
 use crate::ui::components::button::{ButtonVariant, button, icon_button};
 use crate::ui::components::smooth_scroll::SmoothScroll;
-use crate::ui::components::spinner::spinner_fill;
+use crate::ui::components::spinner::{spinner_fill, spinner_sized};
 use crate::ui::components::video_card::{GRID_PAD, grid_metrics};
 use crate::ui::components::video_grid::video_grid;
 use crate::ui::icons::Icon;
 use crate::ui::{theme, toast};
 
 const PAGE: u32 = 30;
+const ALL: u32 = 100_000;
 
 pub struct PlaylistPage {
     stores: Stores,
@@ -25,6 +26,7 @@ pub struct PlaylistPage {
     tracks: Vec<Track>,
     loading: bool,
     has_more: bool,
+    pending: bool,
     error: Option<String>,
     next_start: u32,
     scroll: SmoothScroll,
@@ -47,6 +49,7 @@ impl PlaylistPage {
             tracks: Vec::new(),
             loading: false,
             has_more: false,
+            pending: false,
             error: None,
             next_start: 1,
             scroll: SmoothScroll::new(),
@@ -68,6 +71,19 @@ impl PlaylistPage {
             owner: self.owner.clone(),
             ..self.playlist.clone()
         }
+    }
+
+    fn merge(&mut self, tracks: Vec<Track>, cx: &mut Context<Self>) {
+        let fresh: Vec<Track> = tracks
+            .into_iter()
+            .filter(|t| !self.tracks.iter().any(|k| k.id == t.id))
+            .collect();
+        self.stores.thumbs.update(cx, |t, cx| {
+            for track in &fresh {
+                t.ensure(&track.id, cx);
+            }
+        });
+        self.tracks.extend(fresh);
     }
 
     fn load_more(&mut self, cx: &mut Context<Self>) {
@@ -101,17 +117,7 @@ impl PlaylistPage {
                             this.stores
                                 .playlists
                                 .update(cx, |p, cx| p.refresh(&snapshot, cx));
-                            let fresh: Vec<Track> = page
-                                .tracks
-                                .into_iter()
-                                .filter(|t| !this.tracks.iter().any(|k| k.id == t.id))
-                                .collect();
-                            this.stores.thumbs.update(cx, |t, cx| {
-                                for track in &fresh {
-                                    t.ensure(&track.id, cx);
-                                }
-                            });
-                            this.tracks.extend(fresh);
+                            this.merge(page.tracks, cx);
                             None
                         }
                         Err(e) => {
@@ -132,6 +138,64 @@ impl PlaylistPage {
         })
         .detach();
     }
+
+    fn play_all(&mut self, shuffle: bool, cx: &mut Context<Self>) {
+        if self.pending || self.tracks.is_empty() {
+            return;
+        }
+        if !self.has_more {
+            self.start(shuffle, cx);
+            return;
+        }
+        if self.loading {
+            return;
+        }
+        self.pending = true;
+        self.loading = true;
+        cx.notify();
+        let bin = self.stores.prefs.read(cx).prefs.ytdlp_path.clone();
+        let id = self.playlist.id.clone();
+        let start = self.next_start;
+        cx.spawn(async move |this, cx| {
+            let result =
+                runtime::run(async move { ytdlp::playlist_videos(&bin, &id, start, ALL).await })
+                    .await;
+            let failure = this
+                .update(cx, |this, cx| {
+                    this.loading = false;
+                    this.pending = false;
+                    let failure = match result {
+                        Ok(page) => {
+                            this.merge(page.tracks, cx);
+                            this.has_more = false;
+                            this.start(shuffle, cx);
+                            None
+                        }
+                        Err(e) => Some(e.to_string()),
+                    };
+                    cx.notify();
+                    failure
+                })
+                .ok()
+                .flatten();
+            if let Some(e) = failure {
+                tracing::warn!("loading the full playlist failed: {e}");
+                cx.update(|cx| toast::error(cx, e));
+            }
+        })
+        .detach();
+    }
+
+    fn start(&self, shuffle: bool, cx: &mut Context<Self>) {
+        let queue = if shuffle {
+            shuffled(&self.tracks)
+        } else {
+            self.tracks.clone()
+        };
+        self.stores
+            .player
+            .update(cx, |p, cx| p.play_tracks(queue, 0, cx));
+    }
 }
 
 impl Render for PlaylistPage {
@@ -139,24 +203,6 @@ impl Render for PlaylistPage {
         self.scroll.step(window);
         let collapsed = self.stores.prefs.read(cx).prefs.sidebar_collapsed;
         let (_, card_w) = grid_metrics(window, collapsed);
-
-        let play_all = {
-            let (stores, all) = (self.stores.clone(), self.tracks.clone());
-            move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut gpui::App| {
-                stores
-                    .player
-                    .update(cx, |p, cx| p.play_tracks(all.clone(), 0, cx))
-            }
-        };
-
-        let shuffle = {
-            let (stores, all) = (self.stores.clone(), self.tracks.clone());
-            move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut gpui::App| {
-                stores
-                    .player
-                    .update(cx, |p, cx| p.play_tracks(shuffled(&all), 0, cx))
-            }
-        };
 
         let favorite = self
             .stores
@@ -216,15 +262,27 @@ impl Render for PlaylistPage {
                     "playlist-play-all",
                     "Play all",
                     ButtonVariant::Classic,
-                    play_all,
+                    cx.listener(|this, _, _, cx| this.play_all(false, cx)),
                 ))
-                .child(icon_button(
-                    "playlist-shuffle",
-                    Icon::Shuffle,
-                    "Shuffle",
-                    ButtonVariant::Secondary,
-                    shuffle,
-                ))
+                .child(if self.pending {
+                    div()
+                        .id("playlist-shuffle-busy")
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .px(px(12.0))
+                        .child(spinner_sized(18.0))
+                        .into_any_element()
+                } else {
+                    icon_button(
+                        "playlist-shuffle",
+                        Icon::Shuffle,
+                        "Shuffle",
+                        ButtonVariant::Secondary,
+                        cx.listener(|this, _, _, cx| this.play_all(true, cx)),
+                    )
+                    .into_any_element()
+                })
             });
 
         let body = if self.tracks.is_empty() && self.loading {
