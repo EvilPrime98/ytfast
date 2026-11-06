@@ -11,7 +11,11 @@ use crate::ui::theme;
 const SIZE: f32 = 32.0;
 
 pub fn spinner() -> impl IntoElement {
-    icon(Icon::Spinner, px(SIZE))
+    spinner_sized(SIZE)
+}
+
+pub fn spinner_sized(size: f32) -> impl IntoElement {
+    icon(Icon::Spinner, px(size))
         .text_color(theme::accent())
         .with_animation(
             "spinner",
