@@ -17,7 +17,7 @@ use crate::ui::icons::Icon;
 use crate::ui::{theme, toast};
 
 const PAGE: u32 = 30;
-const ALL: u32 = 100_000;
+pub(super) const ALL: u32 = 100_000;
 
 pub struct PlaylistPage {
     stores: Stores,
